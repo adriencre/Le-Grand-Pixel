@@ -2,7 +2,7 @@
 import { text, textW, label, cardSprite, CW, CH, chipStack, chipSprite, tableSprite, shapes, symbolSprite, canvas, horseSprite, drawEmote } from './sprites.js';
 import { avatarSprite, headIcon } from './avatar.js';
 import { NPC_OUTFITS } from './items.js';
-import { HORSES } from './map.js';
+import { HORSES, TABLES } from './map.js';
 import { raceProgress, raceElapsed } from './race.js';
 import { sfx } from './sfx.js';
 
@@ -10,6 +10,10 @@ export const emotes = new Map(); // player id -> { k, at }, filled by main.js
 export const outfits = new Map(); // player id -> outfit, filled by main.js
 
 export const SW = 480, SH = 270;
+const cfgOf = ui => TABLES.find(t => t.id === ui?.tid) || {};
+const k = a => (a >= 1000 ? a / 1000 + 'K' : a + '');
+const chipsOf = ui => cfgOf(ui).limits?.chips || [10, 50, 100, 500];
+const chipButtons = (ui, attr) => chipsOf(ui).map(a => `<button class="chip c${a} ${attr === 'chip' && ui.chip === a ? 'sel' : ''}" ${attr === 'bet' ? `data-act='{"a":"bet","amt":${a}}'` : `data-chip="${a}"`}>${k(a)}</button>`).join('');
 const clamp = v => Math.max(0, Math.min(1, v));
 const ease = p => 1 - (1 - p) ** 3;
 const RED = new Set([1, 3, 5, 7, 9, 12, 14, 16, 18, 19, 21, 23, 25, 27, 30, 32, 34, 36]);
@@ -70,7 +74,14 @@ function drawParticles(x, dt) {
 
 // Carpet + vignette filling the whole screen behind a scene.
 let carpet = null;
-export function sceneBackdrop(x, w, h) {
+export function sceneBackdrop(x, w, h, vip = false) {
+  if (vip) { // black marble with a gold grid behind VIP tables
+    x.fillStyle = '#0a0810'; x.fillRect(0, 0, w, h);
+    x.fillStyle = 'rgba(200,160,64,.18)';
+    for (let X = 0; X < w; X += 32) x.fillRect(X, 0, 1, h);
+    for (let Y = 0; Y < h; Y += 32) x.fillRect(0, Y, w, 1);
+    return;
+  }
   if (!carpet) {
     const [c, cx] = canvas(24, 24);
     for (let yy = 0; yy < 24; yy++) for (let xx = 0; xx < 24; xx++) {
@@ -120,11 +131,12 @@ const me = v => v.seats.find(s => s?.me);
 const BJ_SEATS = [0, 1, 2, 3, 4].map(i => { const a = (150 - 30 * i) * Math.PI / 180; return [Math.round(245 + 182 * Math.cos(a)), Math.round(44 + 150 * Math.sin(a))]; });
 const SHOE = [404, 52];
 
-function blackjack(x, v, now) {
+function blackjack(x, v, now, ui) {
+  const c = cfgOf(ui);
   x.drawImage(avatarSprite(NPC_OUTFITS.dealer, '#222230', 0, 0), 222, -2, 36, 52);
-  x.drawImage(tableSprite('sbj', 470, 240, shapes.blackjack(470, 240, 44)), 5, 0);
+  x.drawImage(tableSprite('sbj' + c.id, 470, 240, shapes.blackjack(470, 240, 44), c.felt, c.rim), 5, 0);
   text(x, 'LE BLACKJACK PAIE 3 POUR 2', 240, 125, 'rgba(240,210,110,.8)', 1, 'center');
-  text(x, 'LA BANQUE TIRE A 16 ET RESTE A 17', 240, 133, 'rgba(240,210,110,.45)', 1, 'center');
+  text(x, c.limits ? c.name + '  -  MISE ' + k(c.limits.min) + ' A ' + k(c.limits.max) : 'LA BANQUE TIRE A 16 ET RESTE A 17', 240, 133, 'rgba(240,210,110,.45)', 1, 'center');
   // shoe and chip tray
   x.fillStyle = '#2a1408'; x.fillRect(SHOE[0] - 4, SHOE[1] - 6, 30, 34);
   for (let k = 0; k < 4; k++) x.drawImage(cardSprite('??'), SHOE[0] + k, SHOE[1] - k);
@@ -163,13 +175,13 @@ function blackjack(x, v, now) {
   banner(x, msg, 108);
 }
 
-function blackjackBar(v) {
+function blackjackBar(v, ui) {
   const m = me(v);
   if (!m) return { sig: 'x', html: '' };
   if (v.phase === 'betting') {
     return {
       sig: 'b' + (m.bet > 0) + m.ready,
-      html: [10, 50, 100, 500].map(a => `<button class="chip c${a}" data-act='{"a":"bet","amt":${a}}'>${a}</button>`).join('') +
+      html: chipButtons(ui, 'bet') +
         `<button data-act='{"a":"clear"}'>Effacer</button>` + (m.bet && !m.ready ? `<button class="go" data-act='{"a":"ready"}'>Distribuer</button>` : ''),
     };
   }
@@ -189,9 +201,10 @@ const PK_CARDS = [[34, 90], [140, 54], [300, 54], [410, 90], [300, 180], [140, 1
 const PK_CENTER = [240, 128];
 const PHASE_FR = { waiting: 'EN ATTENTE DE JOUEURS', preflop: 'PREFLOP', flop: 'FLOP', turn: 'TURN', river: 'RIVER', showdown: 'ABATTAGE' };
 
-function poker(x, v, now) {
-  x.drawImage(tableSprite('spk', 440, 200, shapes.oval(440, 200, 2.4), '#2a6a9a', '#4a2414'), 20, 28);
-  text(x, 'TEXAS HOLD\'EM', 240, 92, 'rgba(240,210,110,.45)', 1, 'center');
+function poker(x, v, now, ui) {
+  const c = cfgOf(ui);
+  x.drawImage(tableSprite('spk' + c.id, 440, 200, shapes.oval(440, 200, 2.4), c.felt || '#2a6a9a', c.rim || '#4a2414'), 20, 28);
+  text(x, c.limits ? c.name + '  -  BLINDES ' + k(c.limits.sb) + '/' + k(c.limits.bb) : 'TEXAS HOLD\'EM', 240, 92, 'rgba(240,210,110,.45)', 1, 'center');
   for (let k = 0; k < 5; k++) {
     const bx = 185 + k * 22, by = 112;
     x.fillStyle = 'rgba(255,255,255,.12)'; x.fillRect(bx, by, CW, CH);
@@ -223,7 +236,7 @@ function poker(x, v, now) {
   label(x, st, 240, 146, '#ffe680');
 }
 
-function pokerBar(v) {
+function pokerBar(v, ui) {
   const m = me(v);
   if (!m || v.seats[v.toAct] !== m || !m.inHand) {
     const txt = v.phase === 'waiting' ? 'La partie commence dès que 2 joueurs sont assis' : m?.folded && m.inHand ? 'Couché' : 'Patiente…';
@@ -235,7 +248,7 @@ function pokerBar(v) {
     sig: 't' + v.toCall + v.minTo + max + v.phase,
     html: `<button data-act='{"a":"fold"}'>Se coucher</button>` +
       (v.toCall ? `<button class="go" data-act='{"a":"call"}'>Suivre ${Math.min(v.toCall, m.chips)}</button>` : `<button class="go" data-act='{"a":"check"}'>Parole</button>`) +
-      (canRaise ? `<input type="range" id="raise" min="${min}" max="${max}" step="10" value="${min}"><output id="raiseV">${min}</output>` +
+      (canRaise ? `<input type="range" id="raise" min="${min}" max="${max}" step="${(cfgOf(ui).limits?.bb || 20) / 2}" value="${min}"><output id="raiseV">${min}</output>` +
         `<button data-raise>${v.currentBet ? 'Relancer' : 'Miser'}</button><button data-act='{"a":"raise","to":${max}}'>Tapis</button>` : ''),
   };
 }
@@ -306,7 +319,8 @@ function wheelAngles(v, now) {
 }
 
 function roulette(x, v, now, ui) {
-  x.drawImage(tableSprite('srl', 470, 250, shapes.oval(470, 250, 7)), 5, 8);
+  const c = cfgOf(ui);
+  x.drawImage(tableSprite('srl' + c.id, 470, 250, shapes.oval(470, 250, 7), c.felt, c.rim), 5, 8);
   const { rot, ball, rr } = wheelAngles(v, now);
   if (ball != null && v.phase === 'spinning') { // click each time the ball passes a pocket
     const pk = Math.floor((ball - rot) / (Math.PI * 2 / 37));
@@ -361,7 +375,7 @@ function rouletteBar(v, ui) {
   const tot = m ? m.bets.reduce((a, b) => a + b.a, 0) : 0;
   return {
     sig: 'r' + ui.chip + v.phase + tot,
-    html: [10, 50, 100, 500].map(a => `<button class="chip c${a} ${ui.chip === a ? 'sel' : ''}" data-chip="${a}">${a}</button>`).join('') +
+    html: chipButtons(ui, 'chip') +
       (v.phase === 'betting' ? `<button data-act='{"a":"clear"}'>Effacer</button><span class="info">Clique sur le tapis pour miser${tot ? ' — total ' + tot : ''}</span>` : '<span class="info">Rien ne va plus</span>'),
   };
 }
@@ -434,7 +448,7 @@ function slots(x, v, now, ui) {
     text(x, String(val).padStart(6, ' '), lx + 56, 213, '#ff3a3a', 1, 'right');
   };
   led('CREDITS', s ? s.chips : 0, 150);
-  led('MISE', ui.slotBet, 210);
+  led('MISE', v.spinning ? v.bet : ui.slotBet, 210);
   led('GAIN', done ? v.win : 0, 270);
   if (done && v.win > 0 && Math.floor(now / 200) % 2) text(x, 'GAGNE !', 240, 232, '#ffe060', 2, 'center', '#600010');
   // coin tray

@@ -1,8 +1,8 @@
-import { T, MW, MH, TABLES, PILLARS, PLANTS, BAR, NPCS, HORSES, LEADER, SHOP, MANNEQUINS, seatPos, hits, nearBar, nearShop } from './map.js';
+import { T, MW, MH, CASINO_TABLES as TABLES, VIP_TABLES, TIERS, VIP_ELEVATOR, VIP_RECEPTION, nearElevatorIn, nearReception, nearElevatorOut, nearVipBar, nearDiamondDoor, PILLARS, PLANTS, BAR, NPCS, HORSES, LEADER, SHOP, MANNEQUINS, seatPos, hitsIn, nearBar, nearShop, nearDoorIn } from './map.js';
 import { drawAvatar } from './avatar.js';
 import { NPC_OUTFITS, FEATURED } from './items.js';
 import { raceProgress, raceElapsed } from './race.js';
-import { canvas, text, label, tableSprite, shapes, chairSprite, plantSprite, pillarSprite, drawSlotMachine, chipStack, drawEmote } from './sprites.js';
+import { canvas, text, textW, grid, label, tableSprite, shapes, chairSprite, plantSprite, pillarSprite, drawSlotMachine, chipStack, drawEmote } from './sprites.js';
 
 // ---------- static background (floor, walls, rug, bar), rendered once ----------
 let bg = null;
@@ -90,9 +90,10 @@ function stool(x, sx, sy) {
 // ---------- table sprites for the world ----------
 function worldTable(t) {
   const W = t.w * T, H = t.h * T;
-  if (t.type === 'blackjack') return tableSprite('wbj', W, H, shapes.blackjack(W, H), '#1f7a3a');
-  if (t.type === 'poker') return tableSprite('wpk', W, H, shapes.oval(W, H, 2.4), '#2a6a9a', '#4a2414');
-  return tableSprite('wrl', W, H, shapes.oval(W, H, 6), '#1f7a3a');
+  const key = t.type + (t.felt || '');
+  if (t.type === 'blackjack') return tableSprite('w' + key, W, H, shapes.blackjack(W, H), t.felt || '#1f7a3a', t.rim);
+  if (t.type === 'poker') return tableSprite('w' + key, W, H, shapes.oval(W, H, 2.4), t.felt || '#2a6a9a', t.rim || '#4a2414');
+  return tableSprite('w' + key, W, H, shapes.oval(W, H, 6), t.felt || '#1f7a3a', t.rim);
 }
 
 function tableDecor(x, t, now) {
@@ -106,11 +107,11 @@ function tableDecor(x, t, now) {
     x.fillStyle = '#201010'; x.fillRect(X + 38, Y + 6, 20, 6); // chip tray
     ['#e2b02c', '#8a44c8', '#24242c', '#d03040', '#eceff6'].forEach((c, k) => { x.fillStyle = c; x.fillRect(X + 39 + k * 4, Y + 7, 3, 4); });
     x.fillStyle = '#e8e0d0'; x.fillRect(X + 70, Y + 6, 8, 6); x.fillStyle = '#a01c34'; x.fillRect(X + 71, Y + 7, 6, 4);
-    text(x, 'BLACKJACK', X + 48, Y + 18, 'rgba(232,200,90,.75)', 1, 'center');
+    text(x, t.name, X + 48, Y + 18, 'rgba(232,200,90,.75)', 1, 'center');
   } else if (t.type === 'poker') {
     x.fillStyle = 'rgba(232,200,90,.5)';
     for (let k = 0; k < 5; k++) x.fillRect(X + 40 + k * 10, Y + 26, 8, 11);
-    text(x, 'POKER', X + 64, Y + 42, 'rgba(232,200,90,.6)', 1, 'center');
+    text(x, t.name, X + 64, Y + 42, 'rgba(232,200,90,.6)', 1, 'center');
   } else if (t.type === 'roulette') {
     // wheel bowl at the left end
     const cx = X + 24, cy = Y + 24, rot = now / 1500;
@@ -146,7 +147,29 @@ export function drawWorld(x, cam, now, players, meId, prompts, race, top) {
   neonSigns(x, t);
 
   const objs = [];
-  for (const tb of TABLES) {
+  tableObjs(x, objs, TABLES, players, now, race);
+  objs.push([BAR.y * T + T, () => drawBar(x)]);
+  objs.push([LEADER.y + LEADER.h, () => leaderboard(x, top, t)]);
+  for (let k = 0; k < 6; k++) objs.push([BAR.y * T + T + 10, () => stool(x, (BAR.x + 1 + k * 2) * T, BAR.y * T + T + 6)]);
+  for (const [px, py] of PILLARS) objs.push([py * T + T, () => x.drawImage(pillarSprite(), px * T, py * T + T - 44)]);
+  for (const [px, py] of PLANTS) objs.push([py * T + T, () => x.drawImage(plantSprite(), px * T, py * T + T - 17)]);
+  npcObjs(x, objs, NPCS, now);
+  shopCorner(x, objs, now);
+  vipEntrance(x, objs, now);
+  playerObjs(x, objs, players, now);
+  objs.sort((a, b) => a[0] - b[0]);
+  for (const [, f] of objs) f();
+  tableChips(x, players, TABLES);
+  lights(x, t);
+  overheads(x, players, now, meId);
+  for (const pr of prompts) label(x, pr.text, pr.x, pr.y, '#ffe680', 'rgba(30,10,40,.9)');
+  x.restore();
+}
+
+// Sortable draw calls for a set of tables with their chairs (shared with the VIP floor).
+export function tableObjs(x, objs, tables, players, now, race) {
+  const t = now / 1000;
+  for (const tb of tables) {
     if (tb.type === 'slots') {
       const busy = players.some(p => p.seat?.t === tb.id);
       objs.push([tb.y * T + 2 * T, () => drawSlotMachine(x, tb.x * T, tb.y * T, t, busy && Math.floor(t * 3) % 4 !== 0, tb.x)]);
@@ -164,36 +187,79 @@ export function drawWorld(x, cam, now, players, meId, prompts, race, top) {
       else objs.push([s.y - 8, () => x.drawImage(chairSprite(s.dir), s.x - 5, s.y - 6)]);
     }
   }
-  objs.push([BAR.y * T + T, () => drawBar(x)]);
-  objs.push([LEADER.y + LEADER.h, () => leaderboard(x, top, t)]);
-  for (let k = 0; k < 6; k++) objs.push([BAR.y * T + T + 10, () => stool(x, (BAR.x + 1 + k * 2) * T, BAR.y * T + T + 6)]);
-  for (const [px, py] of PILLARS) objs.push([py * T + T, () => x.drawImage(pillarSprite(), px * T, py * T + T - 44)]);
-  for (const [px, py] of PLANTS) objs.push([py * T + T, () => x.drawImage(plantSprite(), px * T, py * T + T - 17)]);
-  for (const n of NPCS) objs.push([n.y, () => drawAvatar(x, n.x, n.y, NPC_OUTFITS[n.role], '#222230', n.dir, 0, now)]);
-  shopCorner(x, objs, now);
+}
+
+export function npcObjs(x, objs, npcs, now) {
+  for (const n of npcs) objs.push([n.y, () => drawAvatar(x, n.x, n.y, NPC_OUTFITS[n.role], '#222230', n.dir, 0, now)]);
+}
+
+export function playerObjs(x, objs, players, now) {
+  const t = now / 1000;
   for (const p of players) objs.push([p.y + (p.seat ? 0.5 : 0), () => {
     const frame = p.moving ? 1 + (Math.floor(t * 8) % 2) : 0;
-    drawAvatar(x, p.x, p.y, p.outfit, p.color, p.dir, frame, now, { trail: trail(p) });
+    const sway = p.drunk ? Math.round(Math.sin(now / 300 + p.x) * p.drunk * 2.5) : 0;
+    drawAvatar(x, p.x + sway, p.y, p.outfit, p.color, p.dir, frame, now, { trail: trail(p) });
   }]);
+}
 
-  objs.sort((a, b) => a[0] - b[0]);
-  for (const [, f] of objs) f();
-
-  // chips on tables where people play: a little life in the room
-  for (const p of players) if (p.seat && !p.seat.t.startsWith('slot') && p.seat.t !== 'race') {
-    const tb = TABLES.find(q => q.id === p.seat.t), cx = tb.x * T + tb.w * T / 2, cy = tb.y * T + tb.h * T / 2;
-    chipStack(x, 120, Math.round(p.x + (cx - p.x) * 0.3), Math.round(p.y - 6 + (cy - p.y) * 0.3), 3);
-  }
-
-  lights(x, t);
-
+// Chips in front of seated players: a little life in the room.
+export function tableChips(x, players, tables) {
   for (const p of players) {
-    label(x, p.name, p.x, p.y - 36, p.id === meId ? '#ffe680' : '#fff');
-    if (p.bubble && now - p.bubble.at < 6000) bubble(x, p.bubble.text, p.x, p.y - 39);
-    else if (p.emote && now - p.emote.at < 2500) drawEmote(x, p.emote.k, p.x, p.y - 38, now - p.emote.at);
+    const tb = tables.find(q => q.id === p.seat?.t);
+    if (!tb || tb.type === 'slots' || tb.type === 'race') continue;
+    const cx = tb.x * T + tb.w * T / 2, cy = tb.y * T + tb.h * T / 2;
+    chipStack(x, tb.limits?.chips?.[1] || 120, Math.round(p.x + (cx - p.x) * 0.3), Math.round(p.y - 6 + (cy - p.y) * 0.3), 3);
   }
-  for (const pr of prompts) label(x, pr.text, pr.x, pr.y, '#ffe680', 'rgba(30,10,40,.9)');
-  x.restore();
+}
+
+// Golden VIP elevator, reception desk and red carpet under the big sign.
+function vipEntrance(x, objs, now) {
+  const ex = VIP_ELEVATOR.x, rx = VIP_RECEPTION.x;
+  objs.push([50, () => { // carpet first, under everyone
+    x.fillStyle = '#9a1828'; x.fillRect(ex - 16, 80, 32, 32);
+    x.fillStyle = '#c8a040'; x.fillRect(ex - 16, 80, 1, 32); x.fillRect(ex + 15, 80, 1, 32);
+  }]);
+  objs.push([80, () => {
+    x.fillStyle = '#c8a040'; x.fillRect(ex - 20, 44, 40, 36);
+    x.fillStyle = '#f0d070'; x.fillRect(ex - 20, 44, 40, 2);
+    x.fillStyle = '#14080c'; x.fillRect(ex - 16, 54, 32, 26);
+    for (const dx of [-15, 1]) { x.fillStyle = '#d8b858'; x.fillRect(ex + dx, 55, 14, 25); x.fillStyle = '#f8e8a8'; x.fillRect(ex + dx + 2, 57, 2, 20); }
+    x.fillStyle = '#7a5a20'; x.fillRect(ex - 1, 55, 2, 25);
+    const on = Math.floor(now / 500) % 2;
+    x.fillStyle = '#100808'; x.fillRect(ex - 10, 46, 20, 7);
+    text(x, 'VIP', ex, 47, on ? '#ff4ab0' : '#ffe680', 1, 'center');
+    x.fillStyle = on ? '#60ff80' : '#205a30'; x.fillRect(ex + 13, 63, 2, 2); // call button
+  }]);
+  objs.push([74, () => { // reception desk in black marble
+    x.fillStyle = '#c8a040'; x.fillRect(rx - 17, 60, 34, 16);
+    x.fillStyle = '#1c1424'; x.fillRect(rx - 16, 61, 32, 14);
+    x.fillStyle = '#2e2438'; x.fillRect(rx - 16, 61, 32, 4);
+    text(x, 'VIP', rx, 67, '#f0c040', 1, 'center');
+    x.fillStyle = '#ffe8a0'; x.fillRect(rx + 9, 58, 2, 3); // little lamp
+  }]);
+}
+
+const stars = new Map();
+function star(col) {
+  if (!stars.has(col)) stars.set(col, grid(['..a..', '.aaa.', 'aaaaa', '.aaa.', '.a.a.'], { a: col }));
+  return stars.get(col);
+}
+
+// Names, SDF tag, HIC, chat bubbles and emotes above players (shared with the street).
+export function overheads(x, players, now, meId) {
+  for (const p of players) {
+    if (p.drunk > 0.35 && (now / 2600 + p.x / 50) % 3 < 0.3) text(x, 'HIC !', p.x + 8, p.y - 30 - ((now / 2600 + p.x / 50) % 3) * 20, '#ffe680', 1, 'left', '#000');
+    label(x, p.name, p.x, p.y - 36, p.id === meId ? '#ffe680' : '#fff');
+    if (p.vip) { // member star, the Diamant one twinkles
+      const tier = TIERS[p.vip], sx = Math.round(p.x - textW(p.name) / 2 - 9), sy = p.y - 34;
+      x.fillStyle = 'rgba(10,6,20,.75)'; x.fillRect(sx - 1, sy - 2, 7, 9);
+      x.drawImage(star(p.vip === 3 && Math.floor(now / 250) % 3 === 0 ? '#ffffff' : tier.color), sx, sy);
+    }
+    if (p.homeless) label(x, 'SDF', p.x, p.y - 45, '#c8b8a0', 'rgba(40,30,20,.85)');
+    const top = p.homeless ? 9 : 0;
+    if (p.bubble && now - p.bubble.at < 6000) bubble(x, p.bubble.text, p.x, p.y - 39 - top);
+    else if (p.emote && now - p.emote.at < 2500) drawEmote(x, p.emote.k, p.x, p.y - 38 - top, now - p.emote.at);
+  }
 }
 
 // Rainbow trail: recent positions of each moving player.
@@ -363,27 +429,45 @@ function lights(x, t) {
 }
 
 // ---------- movement ----------
-export function move(me, keys, dt) {
+export function move(me, keys, dt, drunk = 0, zone = 'casino', vip = 0) {
+  const hits = (x, y) => hitsIn(zone, x, y, vip);
   let dx = (keys.right ? 1 : 0) - (keys.left ? 1 : 0), dy = (keys.down ? 1 : 0) - (keys.up ? 1 : 0);
   me.moving = !!(dx || dy);
   if (!me.moving) return;
   if (dx && dy) { dx *= Math.SQRT1_2; dy *= Math.SQRT1_2; }
   me.dir = dy > 0 ? 0 : dy < 0 ? 3 : dx < 0 ? 1 : 2;
   if (dx && !dy) me.dir = dx < 0 ? 1 : 2;
+  if (drunk > 0) { // stagger sideways to the way you walk
+    const t = performance.now(), s = Math.sin(t / 330) * drunk * 0.9, c = Math.cos(t / 470) * drunk * 0.9;
+    [dx, dy] = [dx + (dy ? s : 0), dy + (dx ? c : 0)];
+  }
   const sp = 78 * dt, stuck = hits(me.x, me.y); // if already inside something (just stood up), let them walk out
   if (stuck || !hits(me.x + dx * sp, me.y)) me.x += dx * sp;
   if (stuck || !hits(me.x, me.y + dy * sp)) me.y += dy * sp;
 }
 
 // What the player can interact with right now.
-export function nearby(me, players) {
+export function nearby(me, players, zone = 'casino') {
   let best = null, bd = 20;
-  for (const tb of TABLES) for (let i = 0; i < tb.seats; i++) {
+  for (const tb of zone === 'vip' ? VIP_TABLES : TABLES) for (let i = 0; i < tb.seats; i++) {
     const s = seatPos(tb, i), d = Math.hypot(s.x - me.x, s.y - me.y);
-    if (d < bd && !players.some(p => p.seat?.t === tb.id && p.seat.i === i)) { bd = d; best = { kind: 'seat', t: tb, i, x: s.x, y: s.y - 40, text: 'E : ' + tb.name }; }
+    if (d < bd && !players.some(p => p.seat?.t === tb.id && p.seat.i === i)) {
+      bd = d;
+      const locked = (tb.tier || 0) > (me.vip || 0);
+      best = { kind: locked ? 'locked' : 'seat', t: tb, i, x: s.x, y: s.y - 40, text: locked ? TIERS[tb.tier].name + ' REQUISE' : 'E : ' + tb.name };
+    }
   }
+  if (zone === 'vip') {
+    if (!best && nearElevatorOut(me)) best = { kind: 'door', x: me.x, y: me.y - 40, text: 'E : DESCENDRE AU CASINO' };
+    if (!best && nearVipBar(me)) best = { kind: 'bar', x: me.x, y: me.y - 40, text: 'E : BAR VIP' };
+    if (!best && nearDiamondDoor(me) && (me.vip || 0) < 3) best = { kind: 'locked', x: me.x, y: me.y - 40, text: 'SALON DIAMANT : CARTE DIAMANT' };
+    return best;
+  }
+  if (!best && nearElevatorIn(me)) best = { kind: 'door', x: me.x, y: me.y - 40, text: me.vip ? 'E : MONTER A L\'ETAGE VIP' : 'ASCENSEUR VIP : CARTE REQUISE' };
+  if (!best && nearReception(me)) best = { kind: 'reception', x: me.x, y: me.y - 40, text: 'E : RECEPTION VIP' };
+  if (!best && nearDoorIn(me)) best = { kind: 'door', x: me.x, y: me.y - 40, text: 'E : SORTIR DEHORS' };
   if (!best && nearShop(me)) best = { kind: 'shop', x: me.x, y: me.y - 40, text: 'E : BOUTIQUE & VESTIAIRE' };
-  if (!best && nearBar(me)) best = { kind: 'bar', x: me.x, y: me.y - 40, text: me.chips < 100 ? 'E : CREDIT DU BARMAN' : 'LE BAR' };
+  if (!best && nearBar(me)) best = { kind: 'bar', x: me.x, y: me.y - 40, text: 'E : LE BAR' };
   return best;
 }
 

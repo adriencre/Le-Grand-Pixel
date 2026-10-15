@@ -156,6 +156,11 @@ export const GLASSES = {
 // ---------- accessories: back layer (behind the body) and front layer ----------
 const WINGS = P(['aa..............aa', 'aaa............aaa', '.aaa..........aaa.', '.aaaa........aaaa.', '..aaaa......aaaa..', '..acaa......aaca..', '...aca......aca...', '....aa......aa....'], 5, -4);
 export const ACCS = {
+  guitar: {
+    down: { back: [P(['..xx', '.xx.', 'xx..', 'x...'], 0, 8)] },
+    up: { front: [P(['...x......', '...x......', '..aaa.....', '.aaaaa....', '.aacaa....', '.aaaaa....', '..aaa.....'], 6, 2)] },
+    side: { back: [P(['..x.', '.x..', 'aaa.', 'aaaa', 'aca.', 'aaa.'], 7, 0)] },
+  },
   bowtie: { down: { front: [P(['...aAAa...'], 8)] }, side: { front: [P(['......aa..'], 8)] }, up: {} },
   scarf: {
     down: { front: [P(['..aaaaaa..', '...Aa.....', '...A......'], 8)] },
@@ -250,6 +255,15 @@ export function drawAvatar(ctx, x, y, o, color, dir, frame, now, opts = {}) {
     ctx.save(); ctx.globalCompositeOperation = 'lighter';
     ctx.fillStyle = `rgba(255,230,120,${0.25 + 0.1 * Math.sin(now / 200)})`; ctx.fillRect(x - 4, y - 31, 8, 4);
     ctx.restore();
+  }
+  if (opts.homeless) { // a bit grubby, with flies
+    ctx.fillStyle = 'rgba(70,45,20,.75)';
+    for (const [dx, dy] of [[-3, -12], [2, -10], [-1, -7], [3, -5], [-2, -3], [1, -14]]) ctx.fillRect(x + dx, y + dy, 1, 1);
+    ctx.fillStyle = '#101010';
+    for (let k = 0; k < 3; k++) {
+      const a = now / (180 + k * 40) + k * 2.1;
+      ctx.fillRect(Math.round(x + Math.cos(a) * (7 + k)), Math.round(y - 22 + Math.sin(a * 1.3) * 4), 1, 1);
+    }
   }
   if (fx) drawFx(ctx, fx, x, y, now, 'front', opts.trail);
 }

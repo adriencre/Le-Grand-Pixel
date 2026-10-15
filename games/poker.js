@@ -68,10 +68,12 @@ export function distribute(players) {
   return win;
 }
 
-const SB = 10, BB = 20, TURN_TIME = 30000;
+const TURN_TIME = 30000;
 
 export class Poker {
-  constructor(n, notify) {
+  constructor(n, notify, limits = {}) {
+    this.sb = limits.sb || 10;
+    this.bb = limits.bb || 20;
     this.seats = Array(n).fill(null);
     this.notify = notify;
     this.phase = 'waiting';
@@ -79,7 +81,7 @@ export class Poker {
     this.button = -1;
     this.toAct = -1;
     this.currentBet = 0;
-    this.minRaise = BB;
+    this.minRaise = this.bb;
     this.deadline = 0;
   }
 
@@ -133,9 +135,9 @@ export class Poker {
     this.button = ins.find(i => i > this.button) ?? ins[0];
     const after = i => ins[(ins.indexOf(i) + 1) % ins.length];
     const sb = ins.length === 2 ? this.button : after(this.button), bb = after(sb);
-    this.post(sb, SB); this.post(bb, BB);
+    this.post(sb, this.sb); this.post(bb, this.bb);
     this.currentBet = Math.max(...this.seats.map(s => s?.bet || 0));
-    this.minRaise = BB;
+    this.minRaise = this.bb;
     this.phase = 'preflop';
     this.toAct = this.next(bb);
     if (this.toAct < 0 || (this.seats.filter(s => s?.inHand && !s.allIn).length <= 1 && this.seats[this.toAct].bet >= this.currentBet)) return this.nextStreet();
@@ -192,7 +194,7 @@ export class Poker {
   nextStreet() {
     for (const s of this.seats) if (s) { s.bet = 0; s.acted = false; }
     this.currentBet = 0;
-    this.minRaise = BB;
+    this.minRaise = this.bb;
     this.toAct = -1;
     this.deadline = 0;
     const order = ['preflop', 'flop', 'turn', 'river', 'showdown'];

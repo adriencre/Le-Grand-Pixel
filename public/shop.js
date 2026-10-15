@@ -86,7 +86,7 @@ function card(x, me, it, k, now) {
   const words = it.name.split(' '), lines = [''];
   for (const wd of words) { if ((lines.at(-1) + ' ' + wd).trim().length > 13) lines.push(wd); else lines[lines.length - 1] = (lines.at(-1) + ' ' + wd).trim(); }
   lines.slice(0, 2).forEach((l, i) => text(x, l, cx + cw / 2, y0 + 63 + i * 7, '#fff', 1, 'center'));
-  const st = worn ? ['PORTE', '#60ff80'] : owns(me, it) ? [it.price ? 'POSSEDE' : 'GRATUIT', '#c8c0d8'] : null;
+  const st = worn ? ['PORTE', '#60ff80'] : owns(me, it) ? [it.price ? 'POSSEDE' : 'GRATUIT', '#c8c0d8'] : it.price < 0 ? ['A TROUVER', '#8a7a9a'] : null;
   if (st) text(x, st[0], cx + cw / 2, y0 + 79, st[1], 1, 'center');
   else {
     const p = it.price >= 10000 ? Math.round(it.price / 1000) + 'K' : it.price + '';
@@ -237,7 +237,8 @@ export function shopBar(me) {
   if (it) {
     const worn = me.outfit[it.slot] === it.id;
     sig += worn + owns(me, it);
-    if (!owns(me, it)) {
+    if (!owns(me, it) && it.price < 0) html = '<span class="info">Introuvable en boutique : fouille les poubelles dehors !</span>';
+    else if (!owns(me, it)) {
       const ok = me.chips >= it.price;
       html = `<button class="go big" data-shop='{"a":"buy","id":"${it.id}"}' ${ok ? '' : 'disabled'}>Acheter — ${it.price.toLocaleString('fr-FR')} jetons</button>` +
         (ok ? '' : `<span class="info">Il te manque ${(it.price - me.chips).toLocaleString('fr-FR')} jetons</span>`);

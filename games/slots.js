@@ -36,8 +36,9 @@ export class Slots {
   }
 
   act(p, m) {
-    if (this.seats[0]?.p !== p || this.spinning || m.a !== 'spin' || !BETS.includes(m.bet) || p.chips < m.bet) return;
+    if (this.seats[0]?.p !== p || this.spinning || m.a !== 'spin' || !Number.isInteger(m.bet) || m.bet < BETS[0] || m.bet > BETS.at(-1) * 3 || p.chips < m.bet) return;
     p.chips -= m.bet;
+    this.bet = m.bet;
     this.reels = [roll(), roll(), roll()];
     this.spinning = true;
     this.spinId++;
@@ -53,6 +54,6 @@ export class Slots {
 
   view() {
     const s = this.seats[0];
-    return { reels: this.reels, spinId: this.spinId, spinning: !!this.spinning, win: this.win || 0, seats: [s && { id: s.p.id, name: s.p.name, color: s.p.color, chips: s.p.chips, me: true }] };
+    return { reels: this.reels, bet: this.bet, spinId: this.spinId, spinning: !!this.spinning, win: this.win || 0, seats: [s && { id: s.p.id, name: s.p.name, color: s.p.color, chips: s.p.chips, me: true }] };
   }
 }

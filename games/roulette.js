@@ -18,7 +18,9 @@ const RANGE = { n: 36, dozen: 2, col: 2 };
 const BET_TIME = 15000, SPIN_TIME = 7000, RESULT_TIME = 4500;
 
 export class Roulette {
-  constructor(n, notify) {
+  constructor(n, notify, limits = {}) {
+    this.min = limits.min || 1;
+    this.max = limits.max || Infinity;
     this.seats = Array(n).fill(null);
     this.notify = notify;
     this.phase = 'betting';
@@ -50,8 +52,9 @@ export class Roulette {
     if (m.a !== 'bet' || !(m.t in { n: 1, red: 1, black: 1, even: 1, odd: 1, low: 1, high: 1, dozen: 1, col: 1 })) return;
     const v = m.t in RANGE ? m.v : 0;
     if (!Number.isInteger(v) || v < 0 || v > (RANGE[m.t] || 0) || !validBet(p, m.amt)) return;
-    p.chips -= m.amt;
     const same = s.bets.find(b => b.t === m.t && b.v === v);
+    if (m.amt < this.min || (same?.a || 0) + m.amt > this.max) return;
+    p.chips -= m.amt;
     if (same) same.a += m.amt; else s.bets.push({ t: m.t, v, a: m.amt });
     this.notify();
   }

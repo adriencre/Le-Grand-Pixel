@@ -4,6 +4,9 @@ Un casino en pixel art où l'on se balade, s'assoit aux tables et joue entre pot
 
 - **Jeux** : Blackjack, Poker Texas Hold'em, Roulette, Machines à sous, Courses de chevaux
 - **Boutique & vestiaire** : 70 cosmétiques (chapeaux, coiffures, tenues, ailes, effets animés…), essayage, tenues enregistrées
+- **Étage VIP** : cartes Or, Platine, Diamant à la réception, ascenseur doré, salle VIP, mezzanine Platine et salon Diamant aux mises énormes
+- **La rue** : ruiné, le videur te jette dehors. Fais la manche à la guitare (jeu de rythme), fouille les poubelles, et reviens avec 100 jetons
+- **Le bar** : boissons, ivresse, écran qui tangue et mises aléatoires
 - **Social** : chat en bulles, emotes (touches 1-5), classement néon des plus riches
 - **Ambiance** : sons 8-bit et musique lounge générés en code (touche M)
 

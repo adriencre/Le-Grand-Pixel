@@ -115,7 +115,7 @@ export function cardSprite(card) {
 }
 
 // ---------- chips ----------
-export const DENOMS = [[1000, '#e2b02c', '#fff6c8'], [500, '#8a44c8', '#f0e0ff'], [100, '#24242c', '#e8e8f0'], [50, '#d03040', '#ffffff'], [10, '#eceff6', '#3a6ad0']];
+export const DENOMS = [[250000, '#ff4ab0', '#ffffff'], [100000, '#40d0ff', '#ffffff'], [50000, '#c8ccd8', '#5a5e6a'], [25000, '#2fb36b', '#ffffff'], [10000, '#141414', '#f0c040'], [5000, '#ff7a2f', '#ffffff'], [1000, '#e2b02c', '#fff6c8'], [500, '#8a44c8', '#f0e0ff'], [100, '#24242c', '#e8e8f0'], [50, '#d03040', '#ffffff'], [10, '#eceff6', '#3a6ad0']];
 
 export function chipSprite(color, edge) {
   return once('chip' + color + edge, () => {
@@ -138,7 +138,7 @@ export function chipStack(ctx, amount, x, y, max = 10) {
   let left = amount, n = 0;
   const chips = [];
   for (const [v, c, e] of DENOMS) while (left >= v && n < max) { chips.push([c, e]); left -= v; n++; }
-  if (!chips.length && amount > 0) chips.push([DENOMS[4][1], DENOMS[4][2]]);
+  if (!chips.length && amount > 0) chips.push([DENOMS.at(-1)[1], DENOMS.at(-1)[2]]);
   chips.reverse().forEach(([c, e], k) => ctx.drawImage(chipSprite(c, e), Math.round(x - 4), Math.round(y - 5 - k * 2)));
   return chips.length;
 }

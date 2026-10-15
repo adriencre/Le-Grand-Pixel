@@ -24,7 +24,9 @@ export function settle(player, dealer, bet) {
 const BET_TIME = 12000, TURN_TIME = 20000;
 
 export class Blackjack {
-  constructor(n, notify) {
+  constructor(n, notify, limits = {}) {
+    this.min = limits.min || 1;
+    this.max = limits.max || 5000;
     this.seats = Array(n).fill(null);
     this.notify = notify;
     this.shoe = deck(6);
@@ -56,7 +58,7 @@ export class Blackjack {
     const i = this.seats.findIndex(s => s?.p === p), s = this.seats[i];
     if (!s) return;
     if (this.phase === 'betting') {
-      if (m.a === 'bet' && validBet(p, m.amt) && s.bet + m.amt <= 5000) {
+      if (m.a === 'bet' && validBet(p, m.amt) && m.amt >= this.min && s.bet + m.amt <= this.max) {
         p.chips -= m.amt; s.bet += m.amt;
         this.armTimer();
       } else if (m.a === 'clear') { p.chips += s.bet; s.bet = 0; }

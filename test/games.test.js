@@ -87,9 +87,53 @@ test('cosmetic catalog is consistent', async () => {
   const all = Object.values(ITEMS);
   assert.equal(all.length, SLOTS.reduce((a, s) => a + BY_SLOT[s].length, 0));
   for (const it of all) {
-    assert.ok(SLOTS.includes(it.slot) && RARITY[it.rarity] && Number.isInteger(it.price) && it.price >= 0, it.id);
+    assert.ok(SLOTS.includes(it.slot) && RARITY[it.rarity] && Number.isInteger(it.price) && it.price >= -1, it.id);
     assert.ok(BY_SLOT[it.slot].length <= 10, 'a shop page holds 10 cards');
   }
   const d = defaultOutfit('x');
   for (const s of ['hair', 'top', 'bottom', 'shoes']) assert.equal(ITEMS[d[s]].price, 0, 'default ' + s + ' is free');
+});
+
+test('drunk bets stay between 100% and 300% of the asked amount', async () => {
+  const { drunkAmount } = await import('../public/drinks.js');
+  assert.equal(drunkAmount(100, 0, 0.9), 100);
+  assert.equal(drunkAmount(100, 1, 0), 100);
+  assert.equal(drunkAmount(100, 1, 1), 300);
+  assert.equal(drunkAmount(100, 0.5, 1), 200);
+  for (let k = 0; k < 500; k++) { const v = drunkAmount(10, Math.random()); assert.ok(v >= 10 && v <= 30, v); }
+});
+
+test('trash cans and busking pay small, rare rewards', async () => {
+  const { rollLoot, npcTip, FINDS } = await import('../games/street.js');
+  const { ITEMS } = await import('../public/items.js');
+  for (const id of FINDS) assert.equal(ITEMS[id].price, -1, id + ' is not for sale');
+  let chips = 0, items = 0;
+  for (let k = 0; k < 20000; k++) { const l = rollLoot([]); chips += l.chips; if (l.item) items++; }
+  assert.ok(chips / 20000 > 3 && chips / 20000 < 20, 'avg per search ' + chips / 20000);
+  assert.ok(items > 50 && items < 400, 'items ' + items);
+  assert.equal(rollLoot(FINDS, () => 0).chips, 150); // already owns both finds
+  assert.equal(npcTip(0, () => 0.99), 0);
+  let tips = 0;
+  for (let k = 0; k < 600; k++) tips += npcTip(1);
+  assert.ok(tips / 10 > 15 && tips / 10 < 200, 'per minute at max hype ' + tips / 10);
+});
+
+test('VIP tables enforce their limits and cards upgrade for the difference', async () => {
+  const { Blackjack } = await import('../games/blackjack.js');
+  const { upgradeCost, VIP_TABLES } = await import('../public/map.js');
+  const p = { id: 'a', name: 'A', color: '#fff', chips: 100000 };
+  const bj = new Blackjack(5, () => {}, { min: 1000, max: 25000 });
+  bj.sit(p, 0);
+  bj.act(p, { a: 'bet', amt: 100 });
+  assert.equal(p.chips, 100000, 'under the minimum is refused');
+  bj.act(p, { a: 'bet', amt: 25000 }); bj.act(p, { a: 'bet', amt: 1000 });
+  assert.equal(p.chips, 75000, 'over the maximum is refused');
+  clearTimeout(bj.timer);
+  const pk = new Poker(6, () => {}, { sb: 250, bb: 500 });
+  const a = { id: 'x', chips: 10000 }, b = { id: 'y', chips: 10000 };
+  pk.sit(a, 0); pk.sit(b, 1); clearTimeout(pk.pending); pk.pending = null; pk.startHand(); clearTimeout(pk.timer);
+  assert.equal(a.chips + b.chips, 20000 - 750, 'blinds 250/500 posted');
+  assert.equal(upgradeCost(0, 1), 100000);
+  assert.equal(upgradeCost(1, 3), 1900000);
+  assert.ok(VIP_TABLES.every(t => t.tier >= 1 && t.zone === 'vip'));
 });

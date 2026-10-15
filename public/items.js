@@ -82,6 +82,9 @@ const RAW = [
   ['acc_cape_royale', 'acc', 'Cape royale', 70000, 3, 'cape', { a: '#6a1a9a', c: '#f8f8f8' }, 'Bordee d\'hermine.'],
   ['acc_ailes_ange', 'acc', 'Ailes d\'ange', 90000, 3, 'wings', { a: '#f8f8ff', c: '#b8c4e0' }, 'Chance divine.'],
   ['acc_ailes_demon', 'acc', 'Ailes de demon', 90000, 3, 'wings', { a: '#3a0c14', c: '#d02030' }, 'Le diable au corps.'],
+  // price -1: not for sale, only found in the street trash cans
+  ['acc_sacpoubelle', 'acc', 'Cape sac-poubelle', -1, 2, 'cape', { a: '#1c1c22', c: '#34343c' }, 'Le chic de la rue.'],
+  ['acc_guitare', 'acc', 'Guitare de rue', -1, 2, 'guitar', { a: '#b06a2a', c: '#1a1008', x: '#3a2010' }, 'Elle en a vu, des trottoirs.'],
   // effets
   ['fx_coeurs', 'fx', 'Coeurs', 4000, 1, 'hearts', null, 'Tout le monde t\'aime.'],
   ['fx_notes', 'fx', 'Notes de musique', 4500, 1, 'music', null, 'Tu as le rythme.'],
@@ -107,6 +110,8 @@ export function defaultOutfit(name) {
 
 // Staff and shop mannequins.
 export const NPC_OUTFITS = {
+  hostess: { hair: 'hair_long', hairColor: 0, skin: 2, top: 'top_smoking', bottom: 'bot_jupe', shoes: 'sh_vernis', acc: 'acc_chaine' },
+  bouncer: { hair: 'hair_rase', hairColor: 0, skin: 4, top: 'top_smoking', bottom: 'bot_noir', shoes: 'sh_rangers', glasses: 'gl_soleil' },
   dealer: { hair: 'hair_court', hairColor: 0, skin: 1, top: 'top_smoking', bottom: 'bot_noir', shoes: 'sh_vernis', acc: 'acc_noeud' },
   barman: { hair: 'hair_banane', hairColor: 2, skin: 3, top: 'top_costume', bottom: 'bot_noir', shoes: 'sh_vernis', acc: 'acc_noeud' },
   shop: { hair: 'hair_chignon', hairColor: 9, skin: 0, top: 'top_robe', bottom: 'bot_noir', shoes: 'sh_vernis', glasses: 'gl_rondes', acc: 'acc_chaine' },
