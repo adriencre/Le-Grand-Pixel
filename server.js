@@ -5,7 +5,8 @@ import os from 'node:os';
 import { Server } from 'socket.io';
 import { TABLES, SPAWN, COLORS, T, MW, MH, ST, ST_SPAWN, BUSK, BROKE, ENTRY_MIN, seatPos, standPos, nearBar, nearShop, nearDoorIn, nearDoorOut, nearBusk, nearBin, nearShark, nearResDoor, RES_DOOR,
   LW, LH, LOBBY_SPAWN, LOBBY_ELEV, nearLobbyExit, nearElevatorApt, nearConcierge, nearFurnShop,
-  VW, VH, VIP_SPAWN, VIP_ELEVATOR, TIERS, upgradeCost, nearElevatorIn, nearElevatorOut, nearReception, nearVipBar } from './public/map.js';
+  VW, VH, VIP_SPAWN, VIP_ELEVATOR, TIERS, upgradeCost, nearElevatorIn, nearElevatorOut, nearReception, nearVipBar, nearJobBoard, nearStreetBouncer } from './public/map.js';
+import { JOBS, STREET_JOBS, makeTask, check, capLeft } from './games/jobs.js';
 import { rollLoot, npcTip, LOAN, loanDue } from './games/street.js';
 import { ACHIEVEMENTS } from './public/achievements.js';
 import { FURNITURE, WALLS, FLOORS, APT_SIZES, MAX_ITEMS, fits, cleanApt, aptDims, aptDoor } from './public/furniture.js';
@@ -77,6 +78,7 @@ function stand(p) {
 // Moving between the casino and the street.
 function goZone(p, zone, at) {
   stand(p);
+  endJob(p);
   p.busking = false;
   p.zone = zone;
   if (!zone.startsWith('apt:')) p.aptName = null;
@@ -91,6 +93,22 @@ function kickOut(p) {
   goZone(p, 'street');
   io.to(p.id).emit('kicked');
   io.emit('say', `💸 ${p.name} est ruiné... le videur le jette dehors !`);
+}
+
+// Small jobs: one task at a time, paid when the answer is right. Earnings are capped per hour, per name
+// shortcut: the cap lives in memory and resets when the server restarts, move it to the db if people abuse it
+const jobCaps = new Map();
+const capOf = p => jobCaps.get(p.name.toLowerCase()) || jobCaps.set(p.name.toLowerCase(), { since: Date.now(), earned: 0 }).get(p.name.toLowerCase());
+function nextTask(p, wait, res = {}) {
+  const now = Date.now(), j = p.job, { name, time } = JOBS[j.kind], t = makeTask(j.kind, j.zone);
+  Object.assign(j, { task: t, from: now + wait, until: now + wait + time });
+  io.to(p.id).emit('job', { kind: j.kind, name, task: t.pub, wait, time, earned: j.earned, left: capLeft(capOf(p), now), ...res });
+}
+function endJob(p, msg) {
+  if (!p.job) return;
+  if (p.job.earned) log(p, 'Service de ' + JOBS[p.job.kind].name.toLowerCase(), p.job.earned);
+  p.job = null;
+  io.to(p.id).emit('job', msg ? { end: msg } : null);
 }
 
 // Trash cans: empty until this time after someone searched them.
@@ -320,7 +338,7 @@ io.on('connection', socket => {
   });
 
   socket.on('move', m => {
-    if (!p || p.seat || p.busking || !m || !Number.isFinite(m.x) || !Number.isFinite(m.y)) return;
+    if (!p || p.seat || p.busking || (p.job && p.job.kind !== 'menage') || !m || !Number.isFinite(m.x) || !Number.isFinite(m.y)) return;
     const big = APT_SIZES.at(-1);
     const [w, h] = p.zone === 'street' ? [ST.w, ST.h] : p.zone === 'vip' ? [VW, VH] : p.zone === 'lobby' ? [LW, LH] : p.zone.startsWith('apt:') ? [big.w, big.h] : [MW, MH];
     p.x = Math.max(0, Math.min(w * T, m.x));
@@ -403,6 +421,27 @@ io.on('connection', socket => {
       if (noteTimes.length >= 8) return; // nobody plays faster than this
       noteTimes.push(now);
       p.hype = Math.max(0, Math.min(1, p.hype + [-0.08, 0.025, 0.05][m.q]));
+    }
+  });
+
+  socket.on('job', m => {
+    if (!p || !m) return;
+    if (m.a === 'start') {
+      const here = p.zone === 'casino' && nearJobBoard(p) ? Object.keys(JOBS) : p.zone === 'street' && nearStreetBouncer(p) ? STREET_JOBS : [];
+      if (p.job || p.seat || p.busking || !here.includes(m.kind)) return;
+      if (capLeft(capOf(p), Date.now()) <= 0) return socket.emit('job', { end: `Plafond atteint : reviens dans ${Math.ceil((capOf(p).since + 3600000 - Date.now()) / 60000)} min.` });
+      p.job = { kind: m.kind, zone: p.zone, earned: 0 };
+      p.moving = false;
+      nextTask(p, 1200);
+    } else if (m.a === 'stop') endJob(p);
+    else if (m.a === 'answer' && p.job) {
+      const j = p.job, now = Date.now(), rec = capOf(p);
+      if (now < j.from) return; // the next task is not shown yet
+      const ok = now <= j.until && p.zone === j.zone && check(j.kind, j.task, m.v, p);
+      const paid = ok ? Math.min(JOBS[j.kind].pay, capLeft(rec, now)) : 0;
+      p.chips += paid; rec.earned += paid; j.earned += paid;
+      if (capLeft(rec, now) <= 0) { award(p, 'bosseur'); return endJob(p, `+${paid} — plafond atteint (${rec.earned} jetons cette heure) : bravo, reviens plus tard !`); }
+      nextTask(p, ok ? 400 : 2000, { ok, paid });
     }
   });
 
@@ -602,6 +641,7 @@ io.on('connection', socket => {
   socket.on('disconnect', () => {
     if (!p) return;
     stand(p);
+    endJob(p);
     persist();
     players.delete(p.id);
   });
@@ -626,7 +666,7 @@ setInterval(() => {
       else sendLoan(p);
     }
     // Broke in the casino: a short grace (longer if a bet is still running at a table), then the bouncer.
-    if ((p.zone === 'casino' || p.zone === 'vip') && p.chips < BROKE) { // your apartment is a shelter
+    if ((p.zone === 'casino' || p.zone === 'vip') && p.chips < BROKE && !p.job) { // your apartment is a shelter, a job keeps you inside
       p.brokeSince ||= now;
       if (now - p.brokeSince > (p.seat ? 20000 : 2500)) { p.brokeSince = 0; kickOut(p); }
     } else p.brokeSince = 0;

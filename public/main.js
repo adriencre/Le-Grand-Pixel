@@ -1,10 +1,13 @@
 import { T, MW, MH, ST, VW, VH, TIERS, VIP_BOUNCER, ENTRY_MIN, COLORS, SPAWN, TABLES } from './map.js';
 import { drawVip } from './viproom.js';
 import { daily, showDaily, dismissDaily, drawDaily } from './daily.js';
+import { rules, showRules, firstTime, rulesKey, rulesClick, drawRules } from './rules.js';
+import { tour, startTour, endTour, updateTour, advanceTour, tourFocus, tourGuide, drawTourScene, drawTourUi } from './tour.js';
 import { phone, openPhone, notify, drawPhone, phoneClick, insidePhone, phoneScroll, phoneBar, phoneBarClick } from './phone.js';
 import { rec, drawReception, recHover, recClick, recBar } from './reception.js';
 import { drawStreet, nearbyStreet, streetState, tipFx, floatAt } from './street.js';
 import { busk, startBusk, stopBusk, updateBusk, hitBusk, drawBusk } from './busk.js';
+import { job, onJob, stopJob, updateJob, jobKey, drawJob, drawJobWorld, jobBar } from './jobs.js';
 import { drawWorld, move, nearby } from './world.js';
 import { drawTable, tableBar, onView, rouletteHit, raceHit, sceneBackdrop, emotes, outfits, SW, SH } from './tables.js';
 import { shop, drawShop, shopClick, shopHover, shopBar, celebrate } from './shop.js';
@@ -12,7 +15,7 @@ import { ITEMS } from './items.js';
 import { ACHIEVEMENTS } from './achievements.js';
 import { aptDims, aptSolids } from './furniture.js';
 import { deco, drawApt, nearbyApt, decoBar, decoHover, decoClick } from './apartment.js';
-import { nearElevatorApt, LW, LH, CONCIERGE } from './map.js';
+import { nearElevatorApt, LW, LH, CONCIERGE, nearJobBoard, nearStreetBouncer } from './map.js';
 import { drawLobby, nearbyLobby } from './lobby.js';
 import { fshop, drawFurnShop, openFurnShop, furnShopHover, furnShopClick, furnShopBar, furnCelebrate } from './furnshop.js';
 import { barUi, drawBarScreen, barHover, barClick, served, barBar } from './bar.js';
@@ -34,7 +37,8 @@ let scale = 1, dpr = 1, mode = 'world';
 function fit(m) {
   mode = m;
   const [w, h] = m === 'table' ? [SW, SH] : [400, 225];
-  scale = Math.max(1, Math.floor(Math.min(cv.width / w, cv.height / h)));
+  const reserve = m === 'table' ? 72 * dpr : 0; // room for the betting bar under the table
+  scale = Math.max(1, Math.floor(Math.min(cv.width / w, (cv.height - reserve) / h)));
   buf.width = Math.ceil(cv.width / scale); buf.height = Math.ceil(cv.height / scale);
   bx.imageSmoothingEnabled = false; ctx.imageSmoothingEnabled = false;
 }
@@ -49,6 +53,7 @@ resize();
 // ---------- state ----------
 let meId = null, me = { x: SPAWN.x, y: SPAWN.y, dir: 3, moving: false, chips: 0, drunk: 0, zone: 'casino', homeless: false, hype: 0, vip: 0, name: '' }, seated = null;
 let msgList = [], achievements = [], jackpotPot = 0, loan = null;
+let jobList = null; // jobs offered by the board or the bouncer, shown in the bar
 let myApt = null, lobbySay = null, apt = null, resList = null, sleptAt = -1e9, lastCam = { x: 0, y: 0 }; // apartment I'm in, residence door list
 let phoneVisible = false, elevatorAt = -1e9, casinoSay = null, market = null, bankState = {};
 const [sceneCopy, sceneX] = canvas(SW, SH); // last world frame without HUD/phone, for photos
@@ -102,7 +107,8 @@ function localStorageGet(k) { try { return localStorage.getItem(k) || ''; } catc
 
 // ---------- network ----------
 let joinedAt = 0;
-socket.on('welcome', m => { meId = m.id; joinedAt = performance.now(); me.x = m.x; me.y = m.y; setZone(m.zone); $('login').remove(); sys('Bienvenue au Grand Pixel ! Approche-toi d\'une table et appuie sur E.'); });
+socket.on('welcome', m => { meId = m.id; joinedAt = performance.now(); me.x = m.x; me.y = m.y; setZone(m.zone); $('login').remove(); sys('Bienvenue au Grand Pixel ! Approche-toi d\'une table et appuie sur E.'); if (tab === 'register') { startTour(me, performance.now(), () => { if (pendingDaily) showDaily(pendingDaily, performance.now()); pendingDaily = null; }); } });
+let pendingDaily = null; // the daily bonus waits for the end of the guided tour
 socket.on('players', list => {
   players = list;
   for (const p of list) {
@@ -123,7 +129,7 @@ socket.on('table', v => {
   const type = TABLES.find(t => t.id === v.id).type;
   v.until = performance.now() + v.left;
   table = { id: v.id, type, view: v };
-  if (ui.tid !== v.id) ui.chip = TABLES.find(t => t.id === v.id).limits?.chips?.[0] || 10;
+  if (ui.tid !== v.id) { ui.chip = TABLES.find(t => t.id === v.id).limits?.chips?.[0] || 10; firstTime(type); }
   ui.tid = v.id;
   document.body.classList.add('seated');
   onView(v.id, v);
@@ -147,6 +153,11 @@ socket.on('vipCard', tier => { rec.won = { tier, at: performance.now() }; sfx.wi
 socket.on('busk', on => {
   if (on) { startBusk(performance.now()); musicVolume(0); }
   else { stopBusk(); musicVolume(me.zone === 'street' ? 0.08 : 0.35); }
+});
+socket.on('job', m => {
+  if (!m || m.end) { stopJob(); if (m?.end) sys(m.end); return; }
+  if ('ok' in m) m.ok ? sfx.coin() : sfx.miss();
+  onJob(m, performance.now());
 });
 socket.on('tip', m => {
   const now = performance.now();
@@ -180,7 +191,7 @@ socket.on('furn:bought', () => { furnCelebrate(); sfx.win(2000); });
 socket.on('concierge', t => { lobbySay = { text: t, at: performance.now() }; sfx.pop(); });
 socket.on('slept', () => { sleptAt = performance.now(); });
 socket.on('shark', t => { streetState.sharkSay = { text: t, at: performance.now() }; sfx.miss(); });
-socket.on('daily', r => showDaily(r, performance.now()));
+socket.on('daily', r => { if (tour.on) pendingDaily = r; else showDaily(r, performance.now()); });
 socket.on('msg:list', l => { msgList = l; });
 socket.on('msg:convo', c => { if (phone.convo?.name.toLowerCase() === c.name.toLowerCase()) phone.convo = c; socket.emit('msg:list'); });
 socket.on('msg', m => {
@@ -217,7 +228,7 @@ function refreshBar() {
   bar.style.display = 'flex';
   if (sig !== barSig) {
     barSig = sig;
-    bar.innerHTML = html + `<span class="chips"></span><button data-stand>Se lever</button>`;
+    bar.innerHTML = html + `<span class="chips"></span><button data-rules title="Règles du jeu (H)" aria-label="Règles du jeu">?</button><button data-stand>Se lever</button>`;
   }
   bar.querySelector('.chips').textContent = (mine ? mine.chips : me.chips) + ' jetons';
 }
@@ -232,6 +243,7 @@ bar.addEventListener('click', e => {
   else if (d.sbet) { ui.slotBet = +d.sbet; refreshBar(); }
   else if ('spin' in d) spin();
   else if ('stand' in d) socket.emit('stand');
+  else if ('rules' in d) showRules(table.type);
   else if (d.shop) socket.emit('shop', JSON.parse(d.shop));
   else if (d.vip) socket.emit('vip', +d.vip);
   else if (d.ph) { const act = phoneBarClick(JSON.parse(d.ph)); if (act) socket.emit(...act); }
@@ -239,6 +251,8 @@ bar.addEventListener('click', e => {
   else if (d.apt) { socket.emit('apt:enter', +d.apt); resList = null; }
   else if (d.fbuy) socket.emit('furn:buy', d.fbuy);
   else if ('resclose' in d) resList = null;
+  else if (d.job) { const kind = d.job; jobList = null; firstTime(kind, () => socket.emit('job', { a: 'start', kind })); } // rules before the clock starts
+  else if ('jobclose' in d) jobList = null;
   else if (d.aptedit) socket.emit('apt:edit', JSON.parse(d.aptedit));
   else if (d.deco) {
     const o = JSON.parse(d.deco);
@@ -260,13 +274,14 @@ function setZone(z) {
   const ride = ((z === 'vip') !== (me.zone === 'vip') && me.zone !== 'street' && z !== 'street' && me.zone !== 'lobby' && z !== 'lobby') || (me.zone === 'lobby' && z.startsWith('apt:')) || (z === 'lobby' && me.zone.startsWith('apt:'));
   if (ride) { elevatorAt = performance.now(); setTimeout(sfx.ding, 1100); }
   me.zone = z;
-  closeShop(); stopBusk();
+  closeShop(); stopBusk(); stopJob(); jobList = null;
   resList = null;
   if (!z.startsWith('apt:')) { apt = null; deco.on = false; }
   musicMode(z === 'vip' ? 'vip' : 'casino');
   musicVolume(z === 'street' ? 0.08 : z === 'vip' ? 0.45 : z.startsWith('apt:') || z === 'lobby' ? 0.25 : 0.35);
 }
 const emitNote = q => socket.emit('busk', { a: 'note', q });
+const emitAnswer = v => socket.emit('job', { a: 'answer', v });
 const LANES = { ArrowLeft: 0, KeyA: 0, ArrowDown: 1, KeyS: 1, ArrowUp: 2, KeyW: 2, ArrowRight: 3, KeyD: 3 };
 function openShop() {
   if (phone.open) togglePhone();
@@ -304,11 +319,21 @@ addEventListener('keydown', e => {
     return;
   }
   if (e.target.tagName === 'INPUT') return;
+  if (tour.on) { if (['Enter', 'Space'].includes(e.code)) advanceTour(performance.now()); else if (e.code === 'Escape') endTour(); e.preventDefault(); return; }
+  if (rules.key) { rulesKey(e.code); e.preventDefault(); return; }
   if (daily.show) { if (['Enter', 'Escape', 'Space'].includes(e.code)) dismissDaily(); return; }
+  if (e.code === 'KeyH') { // the guide of what you're doing right now
+    const k = table ? table.type : busk.on ? 'busk' : job.on ? job.kind : phone.open && phone.app === 'stocks' ? 'stocks' : null;
+    if (k) return showRules(k);
+  }
   if (busk.on) { // playing guitar: arrows are notes, E / Escape stops
     if (e.code in LANES && !e.repeat) { hitBusk(LANES[e.code], performance.now(), emitNote); e.preventDefault(); }
     if (e.code === 'Escape' || e.code === 'KeyE') socket.emit('busk', { a: 'stop' });
     return;
+  }
+  if (job.on) { // working: the job's keys answer, Escape quits
+    if (e.code === 'Escape') return socket.emit('job', { a: 'stop' });
+    if (jobKey(e.code, performance.now(), emitAnswer)) { e.preventDefault(); return; }
   }
   if (KEYMAP[e.code]) { keys[KEYMAP[e.code]] = true; e.preventDefault(); }
   if (e.key === 'Enter') { chat.style.display = 'block'; chat.focus(); e.preventDefault(); }
@@ -320,6 +345,7 @@ addEventListener('keydown', e => {
   }
   if (e.code === 'KeyB' && apt?.mine && !phone.open) { Object.assign(deco, { on: !deco.on, sel: null, hold: -1 }); sfx.click(); }
   if (e.code === 'Escape' && resList) { resList = null; return; }
+  if (e.code === 'Escape' && jobList) { jobList = null; return; }
   if (e.code === 'Escape' && phone.open) togglePhone();
   else if (e.code === 'Escape' && uiOpen()) closeShop();
   else if (e.code === 'Escape' && seated) socket.emit('stand');
@@ -334,8 +360,9 @@ addEventListener('keydown', e => {
   if (e.code === 'KeyE' && me.zone === 'street') {
     const n = nearbyStreet({ ...me, id: meId }, players.filter(p => p.zone === 'street'));
     if (n?.kind === 'door') socket.emit('door');
-    else if (n?.kind === 'busk') socket.emit('busk', { a: 'start' });
+    else if (n?.kind === 'busk') firstTime('busk', () => socket.emit('busk', { a: 'start' }));
     else if (n?.kind === 'shark') socket.emit('shark');
+    else if (n?.kind === 'jobs') jobList = ['videur', 'menage'];
     else if (n?.kind === 'res') socket.emit('door');
     else if (n?.kind === 'tip') socket.emit('tip', n.to);
     else if (n?.kind === 'bin' && streetState.bins[n.i].until <= performance.now()) socket.emit('search', n.i);
@@ -358,6 +385,7 @@ addEventListener('keydown', e => {
     if (n?.kind === 'seat') socket.emit('sit', { t: n.t.id, i: n.i });
     else if (n?.kind === 'shop' && wardrobe.outfit) openShop();
     else if (n?.kind === 'bar') openBar();
+    else if (n?.kind === 'jobs') jobList = ['barman', 'croupier', 'videur', 'menage'];
   }
 });
 addEventListener('keyup', e => { if (KEYMAP[e.code]) keys[KEYMAP[e.code]] = false; });
@@ -373,8 +401,10 @@ cv.addEventListener('mousemove', e => {
 cv.addEventListener('wheel', e => { if (phone.open && insidePhone(ui.mx, ui.my)) { phoneScroll(e.deltaY); e.preventDefault(); } }, { passive: false });
 cv.addEventListener('click', e => {
   const mx = e.clientX * dpr / scale - ui.ox, my = e.clientY * dpr / scale - ui.oy;
+  if (tour.on) return advanceTour(performance.now());
+  if (rules.key) return rulesClick();
   if (daily.show) return dismissDaily();
-  if (phone.open && insidePhone(mx, my)) { const act = phoneClick(mx, my, phoneState(), performance.now()); if (act) socket.emit(...act); }
+  if (phone.open && insidePhone(mx, my)) { const act = phoneClick(mx, my, phoneState(), performance.now()); if (act) socket.emit(...act); if (phone.app === 'stocks') firstTime('stocks'); }
   else if (deco.on && apt) { const act = decoClick(apt, mx + lastCam.x, my + lastCam.y); sfx.click(); if (act) socket.emit('apt:edit', act); }
   else if (fshop.open) { furnShopClick(mx, my); sfx.click(); }
   else if (rec.open) { recClick(mx, my); sfx.click(); }
@@ -398,7 +428,9 @@ cv.addEventListener('click', e => {
 let last = performance.now(), lastSend = 0, sent = '';
 function frame(now) {
   const dt = Math.min(0.05, (now - last) / 1000); last = now;
-  if (meId && !seated && !uiOpen() && !busk.on && document.activeElement !== chat) move(me, keys, dt, me.drunk, me.zone, me.vip, apt && aptSolids(apt));
+  updateTour(dt, now);
+  document.body.classList.toggle('touring', tour.on || !!rules.key); // hide the message log under the tour and the guides
+  if (meId && !tour.on && !seated && !uiOpen() && !busk.on && !(job.on && job.kind !== 'menage') && document.activeElement !== chat) move(me, keys, dt, me.drunk, me.zone, me.vip, apt && aptSolids(apt));
   if (meId && !seated && now - lastSend > 66) {
     const m = { x: Math.round(me.x * 10) / 10, y: Math.round(me.y * 10) / 10, dir: me.dir, moving: me.moving }, s = JSON.stringify(m);
     if (s !== sent) { socket.emit('move', m); sent = s; }
@@ -411,11 +443,15 @@ function frame(now) {
     if (p.id === meId && !seated) Object.assign(q, { x: me.x, y: me.y, dir: me.dir, moving: me.moving });
     return q;
   });
+  if (tour.on && tour.scene === 'casino') list.push(tourGuide());
 
   const want = table || uiOpen() ? 'table' : 'world';
   if (want !== mode) fit(want);
   bx.fillStyle = '#000'; bx.fillRect(0, 0, buf.width, buf.height);
-  if (fshop.open) {
+  if (tour.on && tour.scene !== 'casino') {
+    ui.ox = ui.oy = 0;
+    lastCam = drawTourScene(bx, buf.width, buf.height, now, players.find(p => p.id === meId), meId);
+  } else if (fshop.open) {
     ui.ox = (buf.width - SW) >> 1; ui.oy = (buf.height - SH) >> 1;
     drawFurnShop(bx, buf.width, buf.height, now, fshopData());
     refreshShopBar();
@@ -432,7 +468,9 @@ function frame(now) {
     drawShop(bx, buf.width, buf.height, now, meData());
     refreshShopBar();
   } else if (table) {
-    ui.ox = (buf.width - SW) >> 1; ui.oy = (buf.height - SH) >> 1;
+    // centred, but pushed up so the HTML bar (14px from the bottom) doesn't cover the bottom of the scene
+    const barH = bar.style.display === 'none' ? 0 : Math.ceil((bar.offsetHeight + 18) * dpr / scale);
+    ui.ox = (buf.width - SW) >> 1; ui.oy = Math.max(0, Math.min((buf.height - SH) >> 1, buf.height - SH - barH));
     sceneBackdrop(bx, buf.width, buf.height, TABLES.find(t => t.id === table.id)?.zone === 'vip');
     bx.save(); bx.translate(ui.ox, ui.oy);
     drawTable(bx, table.type, table.view, now, ui);
@@ -440,7 +478,7 @@ function frame(now) {
     if (table.view.until > now || table.type === 'roulette' || table.type === 'race') refreshBar(); // keeps the chip count fresh
   } else {
     ui.ox = ui.oy = 0;
-    const focus = meId ? me : { x: SPAWN.x + Math.sin(now / 4000) * 200, y: 14 * T };
+    const focus = meId ? (tour.on ? tourFocus() : me) : { x: SPAWN.x + Math.sin(now / 4000) * 200, y: 14 * T };
     const inApt = apt && me.zone.startsWith('apt:');
     const [mw, mh] = inApt ? [aptDims(apt).w * T, aptDims(apt).h * T] : me.zone === 'street' ? [ST.w * T, ST.h * T] : me.zone === 'vip' ? [VW * T, VH * T] : me.zone === 'lobby' ? [LW * T, LH * T] : [MW * T, MH * T];
     const cam = {
@@ -465,17 +503,21 @@ function frame(now) {
       const n = nearby(me, list, 'vip');
       drawVip(bx, cam, now, list, meId, n ? [n] : [], me.vip);
     } else {
-      const n = meId ? nearby(me, list) : null;
+      const n = meId && !tour.on ? nearby(me, list) : null;
       drawWorld(bx, cam, now, list, meId, n ? [n] : [], race, top, jackpotPot);
       if (casinoSay && now - casinoSay.at < 4000) label(bx, casinoSay.text, VIP_BOUNCER.x - cam.x, VIP_BOUNCER.y - 40 - cam.y, '#ff8080', 'rgba(20,0,0,.9)');
     }
+    drawJobWorld(bx, cam, now);
+    updateJob(now, emitAnswer);
+    drawJob(bx, buf.width, buf.height, now, me);
     if (phone.open) {
       if (sceneCopy.width !== buf.width || sceneCopy.height !== buf.height) { sceneCopy.width = buf.width; sceneCopy.height = buf.height; }
       sceneX.drawImage(buf, 0, 0);
     }
-    if (meId) hud();
+    if (meId && !tour.on) hud();
     lastCam = cam;
     if (resList && (me.zone !== 'lobby' || !nearElevatorApt(me))) resList = null;
+    if (jobList && !(me.zone === 'casino' ? nearJobBoard(me) : me.zone === 'street' && nearStreetBouncer(me))) jobList = null;
     worldBar();
     if (phone.open) {
       phoneVisible = true;
@@ -491,6 +533,8 @@ function frame(now) {
     if (el > 500 && el < 2000) text(bx, 'Z z z . . .', buf.width / 2, buf.height / 2, '#c8c0e8', 2, 'center');
   }
   drawDaily(bx, buf.width, buf.height, now);
+  drawRules(bx, buf.width, buf.height, now);
+  if (tour.on) drawTourUi(bx, buf.width, buf.height, now, lastCam);
   if (now - elevatorAt < 2200) elevatorScreen(now - elevatorAt);
   const W = buf.width * scale, H = buf.height * scale, d = me.drunk;
   const showPhone = phoneVisible; phoneVisible = false;
@@ -506,7 +550,7 @@ function frame(now) {
     ctx.drawImage(buf, -W / 2 + Math.sin(t * 2.1) * d * 16 * dpr, -H / 2 + Math.cos(t * 1.1) * d * 4 * dpr, W, H);
     ctx.restore();
   } else ctx.drawImage(buf, 0, 0, W, H);
-  if (showPhone) drawPhone(ctx, buf.width, buf.height, now, phoneState(), scale); // full resolution, readable text
+  if (showPhone && !rules.key) drawPhone(ctx, buf.width, buf.height, now, phoneState(), scale); // full resolution, readable text
   requestAnimationFrame(frame);
 }
 
@@ -515,9 +559,9 @@ function worldBar() {
   const want = phone.open ? null : deco.on && apt ? decoBar(apt, me.chips, me.homeless) : resList ? {
     sig: 'res' + JSON.stringify(resList),
     html: '<span class="info">ASCENSEUR — quel appartement ?</span>' + resList.map(r => `<button class="${r.mine ? 'go' : ''}" data-apt="${r.id}">${r.mine ? '🏠 Chez moi' : esc(r.name)}${r.online && !r.mine ? ' ●' : ''}</button>`).join('') + '<button data-resclose>Fermer (Échap)</button>',
-  } : null;
+  } : jobList ? jobBar(jobList) : null;
   if (want) { bar.style.display = 'flex'; if (want.sig !== barSig) { barSig = want.sig; bar.innerHTML = want.html; } }
-  else if (barSig.startsWith('deco') || barSig.startsWith('res')) { bar.style.display = 'none'; barSig = ''; }
+  else if (barSig.startsWith('deco') || barSig.startsWith('res') || barSig.startsWith('job')) { bar.style.display = 'none'; barSig = ''; }
 }
 
 // Elevator ride between the casino and the VIP floor: doors close, floor counter, ding, doors open.

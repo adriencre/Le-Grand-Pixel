@@ -21,6 +21,8 @@ export const HORSES = [
 export const VIP_ELEVATOR = { x: 24 * T, y: 5 * T };
 export const VIP_RECEPTION = { x: 21 * T, y: 4 * T };
 export const VIP_BOUNCER = { x: 26 * T + 6, y: 5 * T + 12 };
+export const JOB_BOARD = { x: 28 * T, y: 2 * T }; // cork board on the top wall, between the VIP bouncer and the bar
+export const nearJobBoard = p => Math.abs(p.x - JOB_BOARD.x) < 14 && p.y < 6 * T + 4;
 export const nearElevatorIn = p => Math.abs(p.x - VIP_ELEVATOR.x) < 22 && p.y < 6 * T + 4;
 export const nearReception = p => Math.abs(p.x - VIP_RECEPTION.x) < 26 && p.y < 6 * T + 4;
 export const LEADER = { x: 246, y: 280, w: 72, h: 52 }; // standing neon leaderboard (px)
@@ -122,6 +124,7 @@ export function hitsIn(zone, x, y, vip = 0, aptSolids = []) {
 export const nearDoorIn = p => Math.abs(p.x - 22 * T) < 2 * T && p.y > 25.6 * T;
 export const nearDoorOut = p => Math.abs(p.x - 20 * T) < 1.8 * T && p.y < 7.6 * T;
 export const nearResDoor = p => Math.abs(p.x - RES_DOOR.x) < 18 && p.y < 7.6 * T;
+export const nearStreetBouncer = p => Math.abs(p.x - BOUNCER.x) < 14 && p.y < 7.6 * T;
 export const nearShark = p => Math.hypot(p.x - SHARK.x, p.y - SHARK.y) < 24;
 export const nearBusk = p => Math.hypot(p.x - BUSK.x, p.y - BUSK.y) < 20;
 export const nearBin = p => BINS.findIndex(([x, y]) => Math.hypot(p.x - x * T, p.y - y * T - 6) < 22);

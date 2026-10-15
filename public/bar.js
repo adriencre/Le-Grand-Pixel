@@ -8,7 +8,7 @@ const SW = 480, SH = 270;
 export const barUi = { open: false, hover: -1, served: null };
 
 const PAL = { g: 'rgba(200,225,245,.85)', y: '#f0b020', w: '#fff', r: '#901830', l: '#80e040', s: '#e8e8e8', a: '#d08020', o: '#fff8c0', b: '#60b0ff', k: '#4a2810' };
-const ICONS = Object.fromEntries(Object.entries({
+export const ICONS = Object.fromEntries(Object.entries({
   beer: ['..wwwww...', '.wwwwwww..', '.gyyyyyg..', '.gyyyyyggg', '.gyyyyyg.g', '.gyyyyyg.g', '.gyyyyyggg', '.gyyyyyg..', '.ggggggg..'],
   wine: ['..g...g...', '..g...g...', '..grrrg...', '..grrrg...', '...grg....', '....g.....', '....g.....', '....g.....', '..ggggg...'],
   mojito: ['......s...', '.....s....', '..glllg...', '..glwlg...', '..glllg...', '..gwllg...', '..glllg...', '..glllg...', '..ggggg...'],

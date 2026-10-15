@@ -10,8 +10,11 @@ Un casino en pixel art où l'on se balade, s'assoit aux tables et joue entre pot
 - **Téléphone (P)** : banque et virements entre potes, plan de qui est où, appareil photo avec filtres et galerie, bourse d'actions fictives ; modèles, fonds et sonneries en boutique
 - **Résidence Les Pixels** : à droite du casino, après la ruelle, un immeuble d'habitation. Dans le hall : concierge, boîtes aux lettres, ascenseur vers les appartements, et le showroom **Meubles et Déco** (53 meubles en 7 rayons + murs et sols, aperçu en grand dans ta propre pièce, de jour comme de nuit)
 - **Appartements** : studio offert, Loft puis Penthouse avec baie vitrée sur la ville. Touche B chez soi pour décorer (stock + catalogue avec vignettes, R pour retourner, Suppr pour ranger). Lit, canapé, frigo, TV, cheminée, piano, jukebox… utilisables avec E. Ouvert ou fermé aux visites, même hors ligne
+- **Petits boulots** : un revenu stable sans jouer. Au panneau « JOBS » du casino : barman (servir la bonne boisson, touches 1-8), croupier (le croupier tire ou reste ? flèches), videur (laisser entrer selon la carte et l'état, flèches) et ménage (ramasser verres et confettis, E). Dans la rue, le videur embauche aussi les fauchés. 15 à 25 jetons par tâche réussie, 1000 jetons max par heure
 - **Jackpot progressif** : 1 % de chaque mise aux machines remplit un pot commun, affiché en néon ; trois diamants avec une mise de 50+ le raflent
 - **Succès** : 12 succès à débloquer, annoncés à tout le casino, consultables dans l'app Succès du téléphone
+- **Visite guidée** : à la création du compte, Lulu la groom te fait visiter le casino, l'étage VIP, la rue et la Résidence en marchant avec toi, et t'explique chaque endroit
+- **Guides des jeux** : chaque jeu et activité (blackjack, poker, roulette, machines, courses, guitare, jobs, bourse) a son guide illustré par Lulu : règles, mises, gains et conseils. Il s'ouvre la première fois, puis via le bouton « ? Règles » ou la touche H
 - **Social** : chat en bulles, emotes (touches 1-5), classement néon des plus riches
 - **Ambiance** : sons 8-bit et musique lounge générés en code (touche M)
 
@@ -34,7 +37,7 @@ Chaque push sur `main` publie l'image `ghcr.io/adriencre/le-grand-pixel:latest`.
 
 ## Contrôles
 
-ZQSD / flèches : bouger · E : interagir · Échap : se lever · Entrée : chat · 1-5 : emotes · M : musique · P : téléphone · B : décorer chez soi · L : se déconnecter
+ZQSD / flèches : bouger · E : interagir · Échap : se lever · Entrée : chat · 1-5 : emotes · M : musique · P : téléphone · B : décorer chez soi · H : règles du jeu en cours · L : se déconnecter
 
 ## Tests
 

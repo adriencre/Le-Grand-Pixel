@@ -73,7 +73,8 @@
   #log .sys { color: #ffe680; }
   #chat { position: fixed; left: 12px; bottom: 12px; width: 340px; max-width: calc(100vw - 24px); display: none; padding: 9px; background: #0a0410; color: #fff; border: 0; box-shadow: 0 0 0 3px var(--gold); outline: none; }
   body.seated #log { bottom: auto; top: 12px; }
-  body.film #log { display: none; }
+  body.film #log, body.touring #log { display: none; }
+  body.touring #bar { visibility: hidden; } /* the bar is shown inline by JS, visibility still wins */
   body.film #bar { opacity: 0; }
 </style>
 </head>
@@ -91,7 +92,7 @@
     <label id="remember"><input type="checkbox" id="rem" checked> Rester connecté</label>
     <div id="err" role="alert"></div>
     <button class="go big" type="submit" id="go">Entrer</button>
-    <div class="hint">ZQSD / Flèches : bouger · E : s'asseoir<br>Entrée : chat · Échap : se lever<br>1-5 : emotes · M : musique · P : téléphone · L : déconnexion</div>
+    <div class="hint">ZQSD / Flèches : bouger · E : s'asseoir<br>Entrée : chat · Échap : se lever<br>1-5 : emotes · M : musique · P : téléphone · H : règles · L : déconnexion</div>
   </form>
 </div>
 <div id="bar"></div>

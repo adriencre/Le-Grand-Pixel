@@ -1,4 +1,4 @@
-import { T, MW, MH, CASINO_TABLES as TABLES, VIP_TABLES, TIERS, VIP_ELEVATOR, VIP_RECEPTION, nearElevatorIn, nearReception, nearElevatorOut, nearVipBar, nearDiamondDoor, PILLARS, PLANTS, BAR, NPCS, HORSES, LEADER, SHOP, MANNEQUINS, seatPos, hitsIn, nearBar, nearShop, nearDoorIn } from './map.js';
+import { T, MW, MH, CASINO_TABLES as TABLES, VIP_TABLES, TIERS, VIP_ELEVATOR, VIP_RECEPTION, nearElevatorIn, nearReception, nearElevatorOut, nearVipBar, nearDiamondDoor, PILLARS, PLANTS, BAR, NPCS, HORSES, LEADER, SHOP, MANNEQUINS, seatPos, hitsIn, nearBar, nearShop, nearDoorIn, JOB_BOARD, nearJobBoard } from './map.js';
 import { drawAvatar } from './avatar.js';
 import { NPC_OUTFITS, FEATURED } from './items.js';
 import { raceProgress, raceElapsed } from './race.js';
@@ -157,6 +157,7 @@ export function drawWorld(x, cam, now, players, meId, prompts, race, top, pot) {
   npcObjs(x, objs, NPCS, now);
   shopCorner(x, objs, now);
   vipEntrance(x, objs, now);
+  objs.push([3 * T, () => jobBoard(x)]);
   playerObjs(x, objs, players, now);
   objs.sort((a, b) => a[0] - b[0]);
   for (const [, f] of objs) f();
@@ -165,6 +166,18 @@ export function drawWorld(x, cam, now, players, meId, prompts, race, top, pot) {
   overheads(x, players, now, meId);
   for (const pr of prompts) label(x, pr.text, pr.x, pr.y, '#ffe680', 'rgba(30,10,40,.9)');
   x.restore();
+}
+
+// Cork board with pinned job offers, on the top wall.
+function jobBoard(x) {
+  const bx = JOB_BOARD.x - 12, by = JOB_BOARD.y + 4;
+  x.fillStyle = '#5a3418'; x.fillRect(bx, by, 24, 18);
+  x.fillStyle = '#b8864a'; x.fillRect(bx + 1, by + 1, 22, 16);
+  for (const [px, py, c] of [[3, 3, '#f4f1e8'], [12, 2, '#ffe680'], [5, 10, '#c8e0ff'], [14, 9, '#f4f1e8']]) {
+    x.fillStyle = c; x.fillRect(bx + px, by + py, 7, 6);
+    x.fillStyle = '#e04050'; x.fillRect(bx + px + 3, by + py, 1, 1);
+  }
+  text(x, 'JOBS', JOB_BOARD.x, by - 7, '#ffe680', 1, 'center', '#000');
 }
 
 // Sortable draw calls for a set of tables with their chairs (shared with the VIP floor).
@@ -474,6 +487,7 @@ export function nearby(me, players, zone = 'casino') {
     return best;
   }
   if (!best && nearElevatorIn(me)) best = { kind: 'door', x: me.x, y: me.y - 40, text: me.vip ? 'E : MONTER A L\'ETAGE VIP' : 'ASCENSEUR VIP : CARTE REQUISE' };
+  if (!best && nearJobBoard(me)) best = { kind: 'jobs', x: JOB_BOARD.x, y: me.y - 40, text: 'E : OFFRES D\'EMPLOI' };
   if (!best && nearReception(me)) best = { kind: 'reception', x: me.x, y: me.y - 40, text: 'E : RECEPTION VIP' };
   if (!best && nearDoorIn(me)) best = { kind: 'door', x: me.x, y: me.y - 40, text: 'E : SORTIR DEHORS' };
   if (!best && nearShop(me)) best = { kind: 'shop', x: me.x, y: me.y - 40, text: 'E : BOUTIQUE & VESTIAIRE' };

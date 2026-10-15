@@ -254,3 +254,32 @@ test('apartments: windows stay clear, every piece of furniture is in a showroom 
   // a saved wall item over a window goes back to the stock
   assert.deepEqual(cleanApt({ size: 0, items: [{ id: 'tableau', x: 4, y: 1 }] }).stock, { tableau: 1 });
 });
+
+test('small jobs: right answers pay, wrong ones do not, cap holds', async () => {
+  const { JOBS, makeTask, check, capLeft, CAP } = await import('../games/jobs.js');
+  const { hitsIn } = await import('../public/map.js');
+  for (let i = 0; i < 200; i++) {
+    for (const kind of ['barman', 'croupier', 'videur']) {
+      const t = makeTask(kind, 'casino');
+      assert.ok(check(kind, t, t.answer, {}));
+      assert.ok(!check(kind, t, 'nope', {}));
+    }
+    for (const zone of ['casino', 'street']) {
+      const t = makeTask('menage', zone);
+      assert.ok(!hitsIn(zone, t.pub.x, t.pub.y));
+      assert.ok(check('menage', t, 'clean', { x: t.pub.x + 5, y: t.pub.y }));
+      assert.ok(!check('menage', t, 'clean', { x: t.pub.x + 40, y: t.pub.y }));
+    }
+  }
+  const { score } = await import('../games/blackjack.js');
+  for (let i = 0; i < 200; i++) {
+    const t = makeTask('croupier', 'casino'), s = score(t.pub.cards);
+    assert.equal(t.answer, s < 17 ? 'hit' : s <= 21 ? 'stand' : 'bust');
+  }
+  const v = makeTask('videur', 'casino', () => 0.9); // rule 2, Diamant card, sober
+  assert.equal(v.answer, 'in');
+  const rec = { since: 0, earned: CAP };
+  assert.equal(capLeft(rec, 1000), 0);
+  assert.equal(capLeft(rec, 3600001 + 1000), CAP); // new hour
+  assert.ok(Object.values(JOBS).every(j => j.pay >= 15 && j.pay <= 25));
+});

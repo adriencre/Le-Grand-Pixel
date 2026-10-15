@@ -1,5 +1,5 @@
 // The street in front of the casino, at night: facade, sidewalk, road, passers-by, pigeons, trash cans.
-import { T, ST, BINS, BUSK, LAMPS, BENCH, HYDRANT, BOUNCER, SHARK, RES_DOOR, CASINO_W, RES_X, ENTRY_MIN, nearDoorOut, nearBusk, nearBin, nearShark, nearResDoor } from './map.js';
+import { T, ST, BINS, BUSK, LAMPS, BENCH, HYDRANT, BOUNCER, SHARK, RES_DOOR, CASINO_W, RES_X, ENTRY_MIN, nearDoorOut, nearBusk, nearBin, nearShark, nearResDoor, nearStreetBouncer } from './map.js';
 import { canvas, text, label, plantSprite } from './sprites.js';
 import { drawAvatar } from './avatar.js';
 import { BY_SLOT, NPC_OUTFITS, SKINS, HAIR_COLORS } from './items.js';
@@ -373,6 +373,7 @@ function nightLights(x, t) {
 export function nearbyStreet(me, players) {
   if (me.busking) return null;
   if (nearDoorOut(me)) return { kind: 'door', x: me.x, y: me.y - 44, text: me.homeless && me.chips < ENTRY_MIN ? `VIDEUR : ${ENTRY_MIN} JETONS MIN.` : 'E : ENTRER AU CASINO' };
+  if (nearStreetBouncer(me)) return { kind: 'jobs', x: BOUNCER.x, y: BOUNCER.y - 50, text: 'E : TRAVAILLER POUR LE VIDEUR' };
   if (nearResDoor(me)) return { kind: 'res', x: RES_DOOR.x, y: RES_DOOR.y - 34, text: 'E : ENTRER DANS LA RESIDENCE' };
   if (nearShark(me)) return { kind: 'shark', x: SHARK.x, y: SHARK.y - 50, text: 'E : PARLER AU REQUIN' };
   const busker = players.find(p => p.busking && p.id !== me.id && Math.hypot(p.x - me.x, p.y - me.y) < 40);

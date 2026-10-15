@@ -15,4 +15,5 @@ export const ACHIEVEMENTS = {
   deco: ['DECORATEUR', '15 MEUBLES CHEZ SOI'],
   penthouse: ['PENTHOUSE', 'AVOIR LE PENTHOUSE'],
   collection: ['COLLECTIONNEUR', '30 MEUBLES DIFFERENTS'],
+  bosseur: ['BOSSEUR', 'PLAFOND DES BOULOTS'],
 };
