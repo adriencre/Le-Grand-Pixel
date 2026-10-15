@@ -9,7 +9,7 @@ Il faut **TrueNAS SCALE 24.10 (Electric Eel) ou plus récent** (Docker intégré
 À chaque `git push` sur `main`, GitHub lance les tests, construit l'image et la publie sur
 `ghcr.io/adriencre/le-grand-pixel:latest` (onglet **Actions** du dépôt pour suivre, environ 3 minutes).
 
-**Une seule fois, après le premier build** : rendre l'image publique pour que TrueNAS puisse la télécharger sans mot de passe.
+Le dépôt étant public, l'image l'est aussi : TrueNAS la télécharge sans mot de passe. Si un jour tu passes le dépôt en privé, rends le package public à la main :
 GitHub → ton profil → **Packages** → `le-grand-pixel` → **Package settings** → **Change visibility** → **Public**.
 
 ## 2. Le dataset pour la base
