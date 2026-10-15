@@ -1,0 +1,13 @@
+{
+  "name": "le-grand-pixel",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "node server.js",
+    "test": "node --test"
+  },
+  "dependencies": {
+    "socket.io": "^4.8.1"
+  }
+}

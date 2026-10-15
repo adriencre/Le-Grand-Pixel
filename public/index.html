@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Le Grand Pixel</title>
+<link rel="icon" href="data:,">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet">
+<style>
+  :root { --gold: #e8c050; --ink: #12081a; --panel: rgba(18, 8, 26, .92); }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; overflow: hidden; background: #000; color: #fff; font: 10px 'Press Start 2P', monospace; }
+  canvas { display: block; width: 100vw; height: 100vh; image-rendering: pixelated; }
+  button, input { font: inherit; }
+  button {
+    color: #fff; background: #3a2448; border: 0; padding: 9px 12px; margin: 0 3px; cursor: pointer;
+    box-shadow: 0 -3px 0 0 #1a0c24 inset, 0 0 0 2px #0a0410, 0 0 0 4px #6a4a7a;
+  }
+  button:hover { background: #4e3060; }
+  button:active { transform: translateY(2px); }
+  button:disabled { opacity: .45; cursor: default; }
+  button.go { background: #1f8a44; box-shadow: 0 -3px 0 0 #0c4a20 inset, 0 0 0 2px #0a0410, 0 0 0 4px #48c070; }
+  button.big { padding: 12px 18px; }
+  button.chip { width: 44px; height: 44px; border-radius: 50%; padding: 0; font-size: 9px; border: 4px dashed #fff; box-shadow: 0 0 0 2px #0a0410; }
+  button.c10, button.chip:not([class*=" c"]) { background: #eceff6; color: #2a4aa0; border-color: #3a6ad0; }
+  button.c50 { background: #d03040; }
+  button.c100 { background: #24242c; }
+  button.c500 { background: #8a44c8; }
+  button.chip.sel { outline: 3px solid var(--gold); outline-offset: 2px; }
+  #login {
+    position: fixed; inset: 0; display: grid; place-items: center;
+    background: radial-gradient(ellipse at center, rgba(40, 10, 50, .55), rgba(5, 0, 10, .9));
+  }
+  #login form { background: var(--panel); padding: 28px 30px; text-align: center; box-shadow: 0 0 0 4px #0a0410, 0 0 0 8px var(--gold), 0 0 60px #ff2090; max-width: calc(100vw - 32px); }
+  h1 { margin: 0 0 6px; font-size: 30px; font-weight: normal; color: #ff6ad0; text-shadow: 0 0 8px #ff2090, 0 0 22px #ff2090, 3px 3px 0 #400020; letter-spacing: 2px; }
+  .sub { color: #80f0ff; text-shadow: 0 0 6px #20a0ff; margin-bottom: 22px; font-size: 9px; }
+  #name { width: 260px; max-width: 100%; padding: 10px; background: #0a0410; color: #fff; border: 0; box-shadow: 0 0 0 3px #6a4a7a; text-align: center; outline: none; }
+  #name:focus { box-shadow: 0 0 0 3px var(--gold); }
+  #colors { display: flex; gap: 8px; justify-content: center; margin: 18px 0 22px; flex-wrap: wrap; }
+  #colors button { width: 26px; height: 26px; padding: 0; margin: 0; }
+  #colors button.sel { box-shadow: 0 0 0 2px #0a0410, 0 0 0 5px var(--gold); }
+  .hint { margin-top: 18px; color: #a890b8; font-size: 8px; line-height: 1.8; }
+  #bar {
+    position: fixed; left: 50%; bottom: 14px; transform: translateX(-50%); display: none; align-items: center; gap: 4px;
+    background: var(--panel); padding: 12px 14px; box-shadow: 0 0 0 3px #0a0410, 0 0 0 5px #6a4a7a; max-width: calc(100vw - 32px); flex-wrap: wrap; justify-content: center;
+  }
+  #bar .info { color: #d8c8e8; margin: 0 8px; font-size: 9px; }
+  #bar .chips { color: var(--gold); margin: 0 10px; }
+  #bar input[type=range] { width: 140px; accent-color: var(--gold); }
+  #bar output { color: var(--gold); min-width: 50px; display: inline-block; text-align: center; }
+  #log { position: fixed; left: 12px; bottom: 12px; width: 340px; max-width: calc(100vw - 24px); pointer-events: none; font-size: 8px; line-height: 1.7; }
+  #log div { background: rgba(10, 4, 16, .7); padding: 3px 6px; margin-top: 2px; transition: opacity 1s; text-shadow: 1px 1px 0 #000; }
+  #log .sys { color: #ffe680; }
+  #chat { position: fixed; left: 12px; bottom: 12px; width: 340px; max-width: calc(100vw - 24px); display: none; padding: 9px; background: #0a0410; color: #fff; border: 0; box-shadow: 0 0 0 3px var(--gold); outline: none; }
+  body.seated #log { bottom: auto; top: 12px; }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="login">
+  <form>
+    <h1>LE GRAND PIXEL</h1>
+    <div class="sub">Blackjack · Poker · Roulette · Machines</div>
+    <input id="name" maxlength="12" placeholder="Ton pseudo" autocomplete="off" required>
+    <div id="colors"></div>
+    <button class="go big" type="submit">Entrer</button>
+    <div class="hint">ZQSD / Flèches : bouger · E : s'asseoir<br>Entrée : chat · Échap : se lever<br>1-5 : emotes · M : musique</div>
+  </form>
+</div>
+<div id="bar"></div>
+<div id="log"></div>
+<input id="chat" maxlength="80" placeholder="Message… (Entrée)" autocomplete="off">
+<script src="/socket.io/socket.io.js"></script>
+<script type="module" src="main.js"></script>
+</body>
+</html>
