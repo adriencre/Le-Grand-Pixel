@@ -149,5 +149,20 @@ test('stock exchange: fees, no short selling, no credit, prices stay positive', 
   assert.deepEqual(p.stocks, {});
   assert.equal(trade(p, 'pizza', 1.5, 100), null);
   let price = 2;
-  for (let k = 0; k < 5000; k++) { price = step(price, STOCKS[4])[0]; assert.ok(price >= 1 && Number.isInteger(price)); }
+  for (let k = 0; k < 5000; k++) { price = step(price, STOCKS[4])[0]; assert.ok(price >= 0.01 && Math.abs(Math.round(price * 100) - price * 100) < 1e-6); }
+});
+
+test('market: 16 listings in known sectors, cryptos stay sane, index starts at 1000', async () => {
+  const { STOCKS, SECTORS, indexValue } = await import('../public/market.js');
+  const { step, trade } = await import('../games/stocks.js');
+  assert.equal(new Set(STOCKS.map(s => s.id)).size, 16);
+  assert.ok(STOCKS.every(s => SECTORS.includes(s.sector) && s.sector !== 'TOUT'));
+  assert.equal(indexValue({}), 1000);
+  for (const s of STOCKS.filter(x => x.crypto)) {
+    let price = s.base;
+    for (let k = 0; k < 10000; k++) { price = step(price, s)[0]; assert.ok(price >= 0.01 && Number.isFinite(price)); }
+  }
+  const p = { chips: 10000, stocks: {} };
+  assert.equal(trade(p, 'dogepix', 4000, 2), -8080); // 8000 + 1% fee
+  assert.equal(trade(p, 'dogepix', -4000, 2.5), 9900);
 });

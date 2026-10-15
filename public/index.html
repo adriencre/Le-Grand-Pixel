@@ -42,9 +42,15 @@
   #login form { background: var(--panel); padding: 28px 30px; text-align: center; box-shadow: 0 0 0 4px #0a0410, 0 0 0 8px var(--gold), 0 0 60px #ff2090; max-width: calc(100vw - 32px); }
   h1 { margin: 0 0 6px; font-size: 30px; font-weight: normal; color: #ff6ad0; text-shadow: 0 0 8px #ff2090, 0 0 22px #ff2090, 3px 3px 0 #400020; letter-spacing: 2px; }
   .sub { color: #80f0ff; text-shadow: 0 0 6px #20a0ff; margin-bottom: 22px; font-size: 9px; }
-  #name { width: 260px; max-width: 100%; padding: 10px; background: #0a0410; color: #fff; border: 0; box-shadow: 0 0 0 3px #6a4a7a; text-align: center; outline: none; }
-  #name:focus { box-shadow: 0 0 0 3px var(--gold); }
-  #colors { display: flex; gap: 8px; justify-content: center; margin: 18px 0 22px; flex-wrap: wrap; }
+  #name, #pass, #pass2 { display: block; margin: 0 auto 10px; width: 260px; max-width: 100%; padding: 10px; background: #0a0410; color: #fff; border: 0; box-shadow: 0 0 0 3px #6a4a7a; text-align: center; outline: none; }
+  #name:focus, #pass:focus, #pass2:focus { box-shadow: 0 0 0 3px var(--gold); }
+  #tabs { display: flex; justify-content: center; gap: 6px; margin-bottom: 16px; }
+  #tabs button { font-size: 9px; padding: 8px 10px; opacity: .55; }
+  #tabs button.on { opacity: 1; box-shadow: 0 -3px 0 0 #1a0c24 inset, 0 0 0 2px #0a0410, 0 0 0 4px var(--gold); }
+  #login:not(.register) .reg { display: none; }
+  #remember { display: block; margin: 4px 0 12px; font-size: 8px; color: #c8b8d8; cursor: pointer; }
+  #err { min-height: 12px; margin-bottom: 10px; color: #ff7070; font-size: 8px; line-height: 1.6; }
+  #colors { display: flex; gap: 8px; justify-content: center; margin: 8px 0 14px; flex-wrap: wrap; }
   #colors button { width: 26px; height: 26px; padding: 0; margin: 0; }
   #colors button.sel { box-shadow: 0 0 0 2px #0a0410, 0 0 0 5px var(--gold); }
   .hint { margin-top: 18px; color: #a890b8; font-size: 8px; line-height: 1.8; }
@@ -69,10 +75,15 @@
   <form>
     <h1>LE GRAND PIXEL</h1>
     <div class="sub">Blackjack · Poker · Roulette · Machines</div>
-    <input id="name" maxlength="12" placeholder="Ton pseudo" autocomplete="off" required>
-    <div id="colors"></div>
-    <button class="go big" type="submit">Entrer</button>
-    <div class="hint">ZQSD / Flèches : bouger · E : s'asseoir<br>Entrée : chat · Échap : se lever<br>1-5 : emotes · M : musique · P : téléphone</div>
+    <div id="tabs"><button type="button" class="on" data-tab="login">Connexion</button><button type="button" data-tab="register">Créer un compte</button></div>
+    <input id="name" maxlength="12" placeholder="Pseudo" autocomplete="username" required>
+    <input id="pass" type="password" maxlength="64" placeholder="Mot de passe" autocomplete="current-password" required>
+    <input id="pass2" type="password" maxlength="64" placeholder="Confirme le mot de passe" autocomplete="new-password" class="reg">
+    <div id="colors" class="reg"></div>
+    <label id="remember"><input type="checkbox" id="rem" checked> Rester connecté</label>
+    <div id="err" role="alert"></div>
+    <button class="go big" type="submit" id="go">Entrer</button>
+    <div class="hint">ZQSD / Flèches : bouger · E : s'asseoir<br>Entrée : chat · Échap : se lever<br>1-5 : emotes · M : musique · P : téléphone · L : déconnexion</div>
   </form>
 </div>
 <div id="bar"></div>

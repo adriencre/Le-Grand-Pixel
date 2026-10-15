@@ -38,7 +38,7 @@ resize();
 
 // ---------- state ----------
 let meId = null, me = { x: SPAWN.x, y: SPAWN.y, dir: 3, moving: false, chips: 0, drunk: 0, zone: 'casino', homeless: false, hype: 0, vip: 0, name: '' }, seated = null;
-let elevatorAt = -1e9, casinoSay = null, market = null, bankState = {};
+let phoneVisible = false, elevatorAt = -1e9, casinoSay = null, market = null, bankState = {};
 const [sceneCopy, sceneX] = canvas(SW, SH); // last world frame without HUD/phone, for photos
 let kickedAt = -1e9;
 let players = [];
@@ -61,15 +61,31 @@ for (const c of COLORS) {
 }
 $('name').value = localStorageGet('name');
 $('name').focus();
+let tab = 'login';
+for (const b of $('tabs').children) b.onclick = () => {
+  tab = b.dataset.tab;
+  for (const o of $('tabs').children) o.classList.toggle('on', o === b);
+  $('login').classList.toggle('register', tab === 'register');
+  $('go').textContent = tab === 'register' ? 'Créer mon compte' : 'Entrer';
+  $('err').textContent = '';
+};
 $('login').querySelector('form').onsubmit = e => {
   e.preventDefault();
-  const name = $('name').value.trim();
-  if (!name) return;
+  const name = $('name').value.trim(), pass = $('pass').value;
+  if (!name || !pass) return;
+  if (tab === 'register' && pass !== $('pass2').value) { $('err').textContent = 'Les deux mots de passe ne sont pas identiques.'; return; }
   try { localStorage.setItem('name', name); } catch {}
   initAudio(); // browsers only allow sound after a click
-  me.name = name;
-  socket.emit('join', { name, color });
+  socket.emit(tab, { name, pass, color, remember: $('rem').checked });
 };
+// "Stay logged in": resume the saved session as soon as we are connected.
+const savedToken = () => localStorageGet('token');
+socket.on('connect', () => { if (!meId && savedToken()) socket.emit('resume', savedToken()); });
+socket.on('auth:ok', m => { if (m.token) try { localStorage.setItem('token', m.token); } catch {} });
+socket.on('auth:error', m => {
+  if (m.expired) { try { localStorage.removeItem('token'); } catch {} return; }
+  $('err').textContent = m.msg;
+});
 function localStorageGet(k) { try { return localStorage.getItem(k) || ''; } catch { return ''; } }
 
 // ---------- network ----------
@@ -107,7 +123,6 @@ socket.on('chat', m => {
   line(`<b style="color:${m.color}">${esc(m.name)}</b> ${esc(m.text)}`);
 });
 socket.on('say', sys);
-socket.on('joinError', msg => alert(msg));
 socket.on('race', v => { v.until = performance.now() + v.left; race = v; });
 socket.on('top', t => { top = t; });
 socket.on('me', m => { Object.assign(wardrobe, m, { owned: new Set(m.owned) }); });
@@ -220,7 +235,6 @@ function refreshShopBar() {
 function spin() { socket.emit('act', { a: 'spin', bet: ui.slotBet }); }
 
 // ---------- input ----------
-let secret = '';
 const KEYMAP = { KeyW: 'up', ArrowUp: 'up', KeyS: 'down', ArrowDown: 'down', KeyA: 'left', ArrowLeft: 'left', KeyD: 'right', ArrowRight: 'right' };
 addEventListener('keydown', e => {
   if (!meId) return;
@@ -243,8 +257,11 @@ addEventListener('keydown', e => {
   else if (e.code === 'Escape' && seated) socket.emit('stand');
   if (e.code === 'Space' && table?.type === 'slots') { spin(); e.preventDefault(); }
   if (/^Digit[1-5]$/.test(e.code)) socket.emit('emote', +e.code[5] - 1);
-  secret = (secret + e.key.toLowerCase()).slice(-3);
-  if (secret === 'klm') { socket.emit('klm'); secret = ''; return; } // test code: +1M chips
+  if (e.code === 'KeyL' && confirm('Se déconnecter du Grand Pixel ?')) {
+    socket.emit('logout', savedToken());
+    try { localStorage.removeItem('token'); } catch {}
+    return location.reload();
+  }
   if (e.code === 'KeyM') sys(toggleMusic() ? 'Musique : on' : 'Musique : off');
   if (e.code === 'KeyE' && me.zone === 'street') {
     const n = nearbyStreet({ ...me, id: meId }, players.filter(p => p.zone === 'street'));
@@ -358,7 +375,7 @@ function frame(now) {
     }
     if (meId) hud();
     if (phone.open) {
-      drawPhone(bx, buf.width, buf.height, now, phoneState());
+      phoneVisible = true;
       const pb = phoneBar(phoneState());
       if (pb) { bar.style.display = 'flex'; if (pb.sig !== barSig) { barSig = pb.sig; bar.innerHTML = pb.html; } }
       else if (barSig.startsWith('ph-')) { bar.style.display = 'none'; barSig = ''; }
@@ -367,6 +384,7 @@ function frame(now) {
   if (now - kickedAt < 5500) kickedScreen(now - kickedAt);
   if (now - elevatorAt < 2200) elevatorScreen(now - elevatorAt);
   const W = buf.width * scale, H = buf.height * scale, d = me.drunk;
+  const showPhone = phoneVisible; phoneVisible = false;
   if (d > 0.02) { // drunk: the screen sways, zooms a little and doubles
     const t = now / 1000;
     ctx.fillStyle = '#000'; ctx.fillRect(0, 0, cv.width, cv.height);
@@ -379,6 +397,7 @@ function frame(now) {
     ctx.drawImage(buf, -W / 2 + Math.sin(t * 2.1) * d * 16 * dpr, -H / 2 + Math.cos(t * 1.1) * d * 4 * dpr, W, H);
     ctx.restore();
   } else ctx.drawImage(buf, 0, 0, W, H);
+  if (showPhone) drawPhone(ctx, buf.width, buf.height, now, phoneState(), scale); // full resolution, readable text
   requestAnimationFrame(frame);
 }
 

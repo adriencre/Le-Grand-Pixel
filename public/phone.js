@@ -2,13 +2,23 @@
 // Drawn over the world in buffer pixels; the screen is 96x150.
 import { ITEMS } from './items.js';
 import { T, MW, MH, ST, VW, VH, TABLES } from './map.js';
-import { canvas, text, textW, chipSprite } from './sprites.js';
+import { canvas, text as pixelText, chipSprite } from './sprites.js';
+
+// The phone is drawn on the full-resolution canvas, so its text uses a real pixel font
+// (Press Start 2P, loaded by index.html) instead of the tiny 3x5 world font.
+const FONT = '"Press Start 2P", monospace';
+function text(x, s, X, Y, color, sc = 1, align = 'left', shadow = null) {
+  s = String(s);
+  x.font = `${4 * sc}px ${FONT}`; x.textBaseline = 'top'; x.textAlign = align;
+  if (shadow) { x.fillStyle = shadow; x.fillText(s, X + sc * 0.5, Y + sc * 0.5); }
+  x.fillStyle = color; x.fillText(s, X, Y);
+}
 import { drawAvatar } from './avatar.js';
 import { sfx } from './sfx.js';
-import { STOCK_NAMES } from './market.js';
+import { STOCKS, SECTORS, indexValue, fmtPrice } from './market.js';
 
 const SW = 96, SH = 150;
-export const phone = { open: false, at: 0, app: 'home', notif: null, scroll: 0, filter: 0, selfie: false, flash: 0, view: -1, zone: 'casino', stock: null, sendTo: null };
+export const phone = { open: false, at: 0, app: 'home', notif: null, scroll: 0, filter: 0, selfie: false, flash: 0, view: -1, zone: 'casino', stock: null, sv: 'market', sector: 0, sort: 0, sendTo: null };
 const FILTERS = ['NORMAL', 'SEPIA', 'NEON', 'N&B'];
 const FRAMES = { // padding around the screen and colors per model
   basic: { l: 5, t: 14, b: 18, body: '#2a2a34', edge: '#14141a' },
@@ -235,12 +245,15 @@ function selfieInto(x, S, X, Y, w, h, now, scale) {
   x.drawImage(pv, Math.round(X + w / 2 - 15 * scale), Math.round(Y + h - 31 * scale + 4), 30 * scale, 34 * scale);
 }
 
+const [vf, vfx] = canvas(SW, 112); // viewfinder, filtered off-screen
 function photo(x, X, Y, S, now) {
   if (S.me.homeless) return lowBattery(x, X, Y, 'PHOTO');
   const vw = SW, vh = 112;
-  if (phone.selfie) selfieInto(x, S, X, Y + 9, vw, vh, now, 3);
-  else x.drawImage(S.scene, (S.scene.width - vw * 2) / 2, (S.scene.height - vh * 2) / 2, vw * 2, vh * 2, X, Y + 9, vw, vh);
-  if (phone.filter) { const img = x.getImageData(X, Y + 9, vw, vh); filterPixels(img.data, phone.filter); x.putImageData(img, X, Y + 9); }
+  vfx.clearRect(0, 0, vw, vh);
+  if (phone.selfie) selfieInto(vfx, S, 0, 0, vw, vh, now, 3);
+  else vfx.drawImage(S.scene, (S.scene.width - vw * 2) / 2, (S.scene.height - vh * 2) / 2, vw * 2, vh * 2, 0, 0, vw, vh);
+  if (phone.filter) { const img = vfx.getImageData(0, 0, vw, vh); filterPixels(img.data, phone.filter); vfx.putImageData(img, 0, 0); }
+  x.drawImage(vf, X, Y + 9);
   x.fillStyle = 'rgba(0,0,0,.5)'; x.fillRect(X, Y + 9, 14, 13); text(x, '<', X + 4, Y + 13, '#fff'); // back
   x.fillStyle = 'rgba(255,255,255,.6)'; // viewfinder corners
   for (const [cx, cy, dx, dy] of [[X + 4, Y + 13, 1, 1], [X + vw - 5, Y + 13, -1, 1], [X + 4, Y + 9 + vh - 5, 1, -1], [X + vw - 5, Y + 9 + vh - 5, -1, -1]]) { x.fillRect(cx, cy, 6 * dx || 1, 1); x.fillRect(cx, cy, 1, 6 * dy || 1); }
@@ -301,35 +314,109 @@ function download(i) {
   document.body.append(a); a.click(); a.remove();
 }
 
-// ---------- stock exchange ----------
+// ---------- stock exchange: markets, one listing, my portfolio ----------
+const SORTS = ['NOM', 'HAUSSE', 'BAISSE'];
+const stockOf = id => STOCKS.find(s => s.id === id);
+const change = (m, id) => (m.prices[id] - m.open[id]) / m.open[id] * 100;
+const pct = v => (v >= 0 ? '+' : '') + v.toFixed(1) + '%';
+const green = v => (v >= 0 ? '#60ff80' : '#ff6060');
+function listed(m) {
+  const sec = SECTORS[phone.sector || 0];
+  const l = STOCKS.filter(s => sec === 'TOUT' || s.sector === sec);
+  if (phone.sort === 1) l.sort((a, b) => change(m, b.id) - change(m, a.id));
+  if (phone.sort === 2) l.sort((a, b) => change(m, a.id) - change(m, b.id));
+  return l;
+}
+function logo(x, s, X, Y) {
+  x.fillStyle = s.color; x.fillRect(X, Y, 9, 9);
+  x.fillStyle = 'rgba(0,0,0,.25)'; x.fillRect(X, Y + 7, 9, 2);
+  text(x, s.name[0], X + 5, Y + 2, '#101014', 1, 'center');
+}
+function indexSeries(m) {
+  const st = STOCKS.filter(s => !s.crypto), n = Math.min(...st.map(s => m.hist[s.id].length));
+  return Array.from({ length: n }, (_, k) => indexValue(Object.fromEntries(st.map(s => [s.id, m.hist[s.id][m.hist[s.id].length - n + k]]))));
+}
+
 function stocks(x, X, Y, S) {
   if (S.me.homeless) return lowBattery(x, X, Y, 'BOURSE');
-  header(x, X, Y, phone.stock ? STOCK_NAMES[phone.stock] : 'BOURSE');
   const m = S.market;
-  if (!m) return;
-  if (phone.stock) {
-    const h = m.hist[phone.stock], price = m.prices[phone.stock], own = S.bank.stocks?.[phone.stock];
-    chart(x, h, X + 4, Y + 26, SW - 8, 50, '#ff4ab0');
-    text(x, 'COURS', X + 5, Y + 82, '#a8a0c0');
-    text(x, fmt(price), X + SW - 4, Y + 80, '#fff', 2, 'right');
-    text(x, 'TES PARTS : ' + (own?.n || 0), X + 5, Y + 98, '#fff');
-    if (own) {
-      const pv = own.n * price - own.cost;
-      text(x, 'VALEUR : ' + short(own.n * price), X + 5, Y + 108, '#d8d0e8');
-      text(x, 'PLUS-VALUE : ' + (pv >= 0 ? '+' : '') + short(pv), X + 5, Y + 118, pv >= 0 ? '#60ff80' : '#ff6060');
-    }
-    text(x, 'FRAIS 1%', X + SW / 2, Y + SH - 10, '#6a6080', 1, 'center');
-    return;
-  }
-  Object.keys(m.prices).forEach((id, i) => {
-    const yy = Y + 26 + i * 24, h = m.hist[id], prev = h[h.length - 2] ?? h[0], price = m.prices[id], ch = (price - prev) / prev * 100;
-    x.fillStyle = 'rgba(255,255,255,.06)'; x.fillRect(X + 2, yy, SW - 4, 22);
-    text(x, STOCK_NAMES[id], X + 5, yy + 3, '#fff');
-    text(x, fmt(price), X + 5, yy + 12, '#ffe680');
-    text(x, (ch >= 0 ? '+' : '') + ch.toFixed(1) + '%', X + 56, yy + 12, ch >= 0 ? '#60ff80' : '#ff6060', 1, 'right');
-    chart(x, h.slice(-15), X + 62, yy + 9, 30, 11, ch >= 0 ? '#60ff80' : '#ff6060');
-    if (S.bank.stocks?.[id]) text(x, S.bank.stocks[id].n + ' PARTS', X + SW - 5, yy + 3, '#80f0ff', 1, 'right');
+  if (!m?.open) return header(x, X, Y, 'BOURSE');
+  if (phone.stock) return stockDetail(x, X, Y, S, m);
+  if (phone.sv === 'portfolio') return portfolio(x, X, Y, S, m);
+  header(x, X, Y, 'MARCHES');
+  const idx = indexValue(m.prices), idx0 = indexValue(m.open), ich = (idx - idx0) / idx0 * 100;
+  x.fillStyle = 'rgba(255,255,255,.07)'; x.fillRect(X + 2, Y + 23, SW - 4, 17);
+  text(x, 'PIXEL 40', X + 5, Y + 25, '#a8a0c0');
+  text(x, fmt(idx), X + 5, Y + 32, '#fff');
+  text(x, pct(ich), X + 34, Y + 32, green(ich));
+  chart(x, indexSeries(m), X + 64, Y + 26, 28, 12, green(ich));
+  text(x, '<', X + 4, Y + 43, '#fff');
+  text(x, SECTORS[phone.sector || 0], X + SW / 2, Y + 43, '#ffe680', 1, 'center');
+  text(x, '>', X + SW - 4, Y + 43, '#fff', 1, 'right');
+  x.fillStyle = 'rgba(255,255,255,.1)'; x.fillRect(X + 2, Y + 51, 44, 9); x.fillRect(X + 48, Y + 51, 46, 9);
+  text(x, 'TRI:' + SORTS[phone.sort || 0], X + 24, Y + 53, '#80f0ff', 1, 'center');
+  text(x, 'MON PORTEF.', X + 71, Y + 53, '#ffe680', 1, 'center');
+  x.save(); x.beginPath(); x.rect(X, Y + 62, SW, SH - 62); x.clip();
+  listed(m).forEach((s, i) => {
+    const yy = Y + 63 + i * 17 - phone.scroll, ch = change(m, s.id);
+    x.fillStyle = i % 2 ? 'rgba(255,255,255,.04)' : 'rgba(255,255,255,.08)'; x.fillRect(X + 2, yy, SW - 4, 16);
+    logo(x, s, X + 4, yy + 3);
+    if (S.bank.stocks?.[s.id]) { x.fillStyle = '#80f0ff'; x.fillRect(X + 2, yy + 1, 1, 14); }
+    text(x, s.name.slice(0, 12), X + 15, yy + 2, '#fff');
+    text(x, fmtPrice(m.prices[s.id]), X + 15, yy + 9, '#ffe680');
+    text(x, pct(ch), X + SW - 4, yy + 2, green(ch), 1, 'right');
+    chart(x, m.hist[s.id].slice(-30), X + 62, yy + 9, 30, 6, green(ch));
   });
+  x.restore();
+}
+
+function stockDetail(x, X, Y, S, m) {
+  const s = stockOf(phone.stock), price = m.prices[s.id], ch = change(m, s.id), h = m.hist[s.id], own = S.bank.stocks?.[s.id];
+  header(x, X, Y, s.name);
+  logo(x, s, X + 4, Y + 24);
+  text(x, s.sector, X + 16, Y + 26, '#a8a0c0');
+  if (s.crypto) { x.fillStyle = '#a01828'; x.fillRect(X + 50, Y + 24, 44, 9); text(x, 'VOLATIL !', X + 72, Y + 26, '#fff', 1, 'center'); }
+  text(x, fmtPrice(price), X + 4, Y + 36, '#fff', 2);
+  text(x, pct(ch), X + SW - 4, Y + 38, green(ch), 1, 'right');
+  chart(x, h, X + 4, Y + 47, SW - 8, 36, s.color);
+  text(x, 'HAUT ' + fmtPrice(Math.max(...h)), X + 5, Y + 48, 'rgba(255,255,255,.6)');
+  text(x, 'BAS ' + fmtPrice(Math.min(...h)), X + 5, Y + 77, 'rgba(255,255,255,.6)');
+  const words = s.desc.split(' '), lines = [''];
+  for (const w of words) { if ((lines.at(-1) + ' ' + w).length > 23) lines.push(w); else lines[lines.length - 1] = (lines.at(-1) + ' ' + w).trim(); }
+  lines.slice(0, 2).forEach((l, i) => text(x, l, X + 4, Y + 87 + i * 7, '#c8c0d8'));
+  x.fillStyle = 'rgba(255,255,255,.07)'; x.fillRect(X + 2, Y + 103, SW - 4, 33);
+  text(x, 'TES PARTS', X + 5, Y + 106, '#a8a0c0'); text(x, fmt(own?.n || 0), X + SW - 5, Y + 106, '#fff', 1, 'right');
+  if (own) {
+    const pv = own.n * price - own.cost;
+    text(x, 'VALEUR', X + 5, Y + 115, '#a8a0c0'); text(x, short(own.n * price), X + SW - 5, Y + 115, '#fff', 1, 'right');
+    text(x, 'PLUS-VALUE', X + 5, Y + 124, '#a8a0c0'); text(x, (pv >= 0 ? '+' : '') + short(pv), X + SW - 5, Y + 124, green(pv), 1, 'right');
+  }
+  text(x, 'FRAIS 1% PAR ORDRE', X + SW / 2, Y + 140, '#6a6080', 1, 'center');
+}
+
+function portfolio(x, X, Y, S, m) {
+  header(x, X, Y, 'PORTEFEUILLE');
+  const pos = Object.entries(S.bank.stocks || {}).map(([id, h]) => ({ s: stockOf(id), h, value: h.n * m.prices[id] })).filter(p => p.s);
+  const total = pos.reduce((a, p) => a + p.value, 0), cost = pos.reduce((a, p) => a + p.h.cost, 0), pv = total - cost;
+  text(x, 'VALEUR TOTALE', X + 5, Y + 25, '#a8a0c0');
+  text(x, short(total), X + 5, Y + 33, '#ffe680', 2);
+  text(x, 'INVESTI ' + short(cost), X + 5, Y + 45, '#c8c0d8');
+  text(x, (pv >= 0 ? '+' : '') + short(pv) + ' (' + (cost ? pct(pv / cost * 100) : '0%') + ')', X + 5, Y + 53, green(pv));
+  let bx = X + 4;
+  x.fillStyle = '#222'; x.fillRect(X + 4, Y + 62, SW - 8, 6);
+  for (const p of pos) { const w = total ? Math.max(1, Math.round(p.value / total * (SW - 8))) : 0; x.fillStyle = p.s.color; x.fillRect(bx, Y + 62, w, 6); bx += w; }
+  x.save(); x.beginPath(); x.rect(X, Y + 71, SW, SH - 71); x.clip();
+  pos.forEach((p, i) => {
+    const yy = Y + 72 + i * 16 - phone.scroll, g = p.value - p.h.cost;
+    x.fillStyle = i % 2 ? 'rgba(255,255,255,.04)' : 'rgba(255,255,255,.08)'; x.fillRect(X + 2, yy, SW - 4, 15);
+    logo(x, p.s, X + 4, yy + 3);
+    text(x, p.s.name.slice(0, 12), X + 15, yy + 2, '#fff');
+    text(x, fmt(p.h.n) + ' PARTS', X + 15, yy + 8, '#a8a0c0');
+    text(x, short(p.value), X + SW - 4, yy + 2, '#ffe680', 1, 'right');
+    text(x, (g >= 0 ? '+' : '') + short(g), X + SW - 4, yy + 8, green(g), 1, 'right');
+  });
+  if (!pos.length) text(x, 'AUCUNE POSITION', X + SW / 2, Y + 90, '#6a6080', 1, 'center');
+  x.restore();
 }
 
 function lowBattery(x, X, Y, title) {
@@ -343,8 +430,14 @@ function lowBattery(x, X, Y, title) {
 }
 
 // ---------- draw everything ----------
-export function drawPhone(x, w, h, now, S) {
+// x is the full-resolution canvas; w, h and positions are in world-buffer pixels, `scale` maps them.
+export function drawPhone(x, w, h, now, S, scale) {
   if (!phone.open) return;
+  x.save(); x.scale(scale, scale); x.imageSmoothingEnabled = false;
+  drawPhoneAt(x, w, h, now, S);
+  x.restore();
+}
+function drawPhoneAt(x, w, h, now, S) {
   const model = ITEMS[S.me.outfit?.phone]?.style || 'basic', f = FRAMES[model];
   const fw = SW + f.l * 2, fh = SH + f.t + f.b;
   const k = Math.min(1, (now - phone.at) / 220), ease = 1 - (1 - k) ** 3;
@@ -377,7 +470,7 @@ export function drawPhoneMini(x, o, cx, cy, now) {
   wallpaper(x, ITEMS[o.wallpaper]?.style, cx - 9, cy - 16, 18, model === 'nokia' ? 18 : 30, now);
   if (model === 'nokia') { x.fillStyle = 'rgba(139,172,15,.6)'; x.fillRect(cx - 9, cy - 16, 18, 18); for (let k = 0; k < 6; k++) { x.fillStyle = '#c8d0d8'; x.fillRect(cx - 8 + (k % 3) * 6, cy + 5 + Math.floor(k / 3) * 5, 4, 3); } }
   if (model === 'gold') { x.fillStyle = 'rgba(255,255,220,.5)'; x.fillRect(cx - 11 + (now / 30) % 22, cy - 20, 2, 40); }
-  if (o.ringtone) text(x, '*', cx + 7, cy - 26 + Math.sin(now / 200) * 2, '#ffe680');
+  if (o.ringtone) pixelText(x, '*', cx + 7, cy - 26 + Math.sin(now / 200) * 2, '#ffe680');
 }
 
 // ---------- input ----------
@@ -385,7 +478,7 @@ export function drawPhoneMini(x, o, cx, cy, now) {
 export function phoneClick(mx, my, S, now) {
   if (!inR(mx, my, 0, 0, SW, SH)) return null;
   if (phone.app !== 'home' && inR(mx, my, 0, 9, 22, 13)) { // back
-    phone.app = phone.app === 'send' ? 'bank' : phone.app === 'gallery' && phone.view >= 0 ? (phone.view = -1, 'gallery') : phone.app === 'gallery' ? 'photo' : phone.app === 'stocks' && phone.stock ? (phone.stock = null, 'stocks') : 'home';
+    phone.app = phone.app === 'send' ? 'bank' : phone.app === 'gallery' && phone.view >= 0 ? (phone.view = -1, 'gallery') : phone.app === 'gallery' ? 'photo' : phone.app === 'stocks' && phone.stock ? (phone.stock = null, 'stocks') : phone.app === 'stocks' && phone.sv === 'portfolio' ? (phone.sv = 'market', 'stocks') : 'home';
     phone.scroll = 0; sfx.click(); return null;
   }
   if (phone.app === 'home') {
@@ -404,8 +497,15 @@ export function phoneClick(mx, my, S, now) {
     else if (inR(mx, my, 56, 136, 40, 12)) { phone.app = 'gallery'; phone.view = -1; }
   } else if (phone.app === 'gallery' && phone.view < 0) {
     loadPhotos().forEach((_, i) => { if (inR(mx, my, 3 + (i % 3) * 31, 25 + Math.floor(i / 3) * 31, 29, 29)) phone.view = i; });
-  } else if (phone.app === 'stocks' && !phone.stock && !S.me.homeless && S.market) {
-    Object.keys(S.market.prices).forEach((id, i) => { if (inR(mx, my, 2, 26 + i * 24, SW - 4, 22)) { phone.stock = id; sfx.click(); } });
+  } else if (phone.app === 'stocks' && !phone.stock && !S.me.homeless && S.market?.open) {
+    const pick = id => { phone.stock = id; phone.scroll = 0; sfx.click(); };
+    if (phone.sv === 'portfolio') {
+      Object.keys(S.bank.stocks || {}).forEach((id, i) => { if (my >= scr.y + 71 && inR(mx, my + phone.scroll, 2, 72 + i * 16, SW - 4, 15)) pick(id); });
+    } else if (inR(mx, my, 0, 40, 16, 10)) { phone.sector = ((phone.sector || 0) + SECTORS.length - 1) % SECTORS.length; phone.scroll = 0; sfx.click(); }
+    else if (inR(mx, my, SW - 16, 40, 16, 10)) { phone.sector = ((phone.sector || 0) + 1) % SECTORS.length; phone.scroll = 0; sfx.click(); }
+    else if (inR(mx, my, 2, 51, 44, 9)) { phone.sort = ((phone.sort || 0) + 1) % 3; sfx.click(); }
+    else if (inR(mx, my, 48, 51, 46, 9)) { phone.sv = 'portfolio'; phone.scroll = 0; sfx.click(); }
+    else listed(S.market).forEach((s, i) => { if (my >= scr.y + 62 && inR(mx, my + phone.scroll, 2, 63 + i * 17, SW - 4, 16)) pick(s.id); });
   }
   return null;
 }
@@ -425,10 +525,13 @@ export function phoneBar(S) {
     };
   }
   if (phone.app === 'stocks' && phone.stock && !S.me.homeless) {
+    const price = S.market.prices[phone.stock], held = S.bank.stocks?.[phone.stock]?.n || 0;
+    const max = Math.floor(S.me.chips / (price * 1.01)); // what the chips can pay, fee included
+    const btn = (q, label, cls = '') => `<button class="${cls}" data-ph='{"a":"stock","qty":${q}}' ${q ? '' : 'disabled'}>${label}</button>`;
     return {
-      sig: 'ph-stock' + phone.stock,
-      html: [1, 10, 100].map(q => `<button class="go" data-ph='{"a":"stock","qty":${q}}'>Acheter ${q}</button>`).join('') +
-        [1, 10, 100].map(q => `<button data-ph='{"a":"stock","qty":${-q}}'>Vendre ${q}</button>`).join(''),
+      sig: 'ph-stock' + phone.stock + max + held,
+      html: [1, 10, 100, 1000].map(q => btn(q, 'Acheter ' + q.toLocaleString('fr-FR'), 'go')).join('') + btn(max, `MAX (${max.toLocaleString('fr-FR')})`, 'go') +
+        [1, 10, 100].map(q => btn(-q, 'Vendre ' + q)).join('') + btn(-held, `TOUT (${held.toLocaleString('fr-FR')})`),
     };
   }
   if (phone.app === 'gallery' && phone.view >= 0) {

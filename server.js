@@ -7,6 +7,7 @@ import { TABLES, SPAWN, COLORS, T, MW, MH, ST, ST_SPAWN, BUSK, BROKE, ENTRY_MIN,
   VW, VH, VIP_SPAWN, VIP_ELEVATOR, TIERS, upgradeCost, nearElevatorIn, nearElevatorOut, nearReception, nearVipBar } from './public/map.js';
 import { rollLoot, npcTip } from './games/street.js';
 import { STOCKS, step, trade } from './games/stocks.js';
+import { fmtPrice } from './public/market.js';
 import { ITEMS, SLOTS, REMOVABLE, SKINS, HAIR_COLORS, RARITY, defaultOutfit } from './public/items.js';
 import { Blackjack } from './games/blackjack.js';
 import { Poker } from './games/poker.js';
@@ -14,6 +15,7 @@ import { Roulette } from './games/roulette.js';
 import { Slots } from './games/slots.js';
 import { Race } from './games/race.js';
 import { DRINKS, SOBER_PER_SEC, drunkAmount } from './public/drinks.js';
+import { openDb, checkPassword } from './db.js';
 
 const PORT = process.env.PORT || 4321;
 const ROOT = path.resolve('public');
@@ -33,23 +35,17 @@ const server = http.createServer((req, res) => {
 });
 const io = new Server(server);
 
-// Chips are saved per pseudo in data/chips.json.
-// shortcut: no password, whoever types your pseudo gets your chips; add accounts if strangers join.
-const SAVE = path.resolve('data/chips.json');
-let saved = {};
-try { saved = JSON.parse(fs.readFileSync(SAVE, 'utf8')); } catch (e) { if (e.code !== 'ENOENT') console.error('chips.json illisible, on repart de zéro :', e.message); }
-let lastSaved = JSON.stringify(saved);
+// Everything is saved in SQLite (data/casino.db); the old JSON saves are imported once.
+fs.mkdirSync(path.resolve('data'), { recursive: true });
+const db = openDb(path.resolve('data/casino.db'));
+const imported = db.importJson(path.resolve('data/chips.json'), path.resolve('data/market.json'));
+if (imported) console.log(`  ${imported} joueurs importes depuis l'ancienne sauvegarde.`);
 function persist() {
-  for (const p of players.values()) saved[p.name.toLowerCase()] = { name: p.name, chips: p.chips, color: p.color, vip: p.vip, stocks: p.stocks, history: p.history, owned: p.owned, outfit: p.outfit, presets: p.presets };
-  const json = JSON.stringify(saved);
-  if (json === lastSaved) return;
-  fs.mkdirSync(path.dirname(SAVE), { recursive: true });
-  fs.writeFileSync(SAVE + '.tmp', json);
-  fs.renameSync(SAVE + '.tmp', SAVE); // atomic: a crash never leaves a half-written file
-  lastSaved = json;
+  db.savePlayers([...players.values()]);
+  db.saveMarket(market);
 }
 setInterval(persist, 3000);
-for (const sig of ['SIGINT', 'SIGTERM']) process.on(sig, () => { persist(); process.exit(0); });
+for (const sig of ['SIGINT', 'SIGTERM']) process.on(sig, () => { persist(); db.close(); process.exit(0); });
 
 const players = new Map();
 const CLASSES = { blackjack: Blackjack, poker: Poker, roulette: Roulette, slots: Slots, race: Race };
@@ -104,23 +100,32 @@ function log(p, text, amount) {
 function sendBank(p) { io.to(p.id).emit('bank', { history: p.history, curve: p.curve, stocks: p.stocks }); }
 const ring = p => io.emit('ring', { id: p.id, tone: ITEMS[p.outfit.ringtone]?.style || 'basic' });
 
-// Stock exchange (prices reset when the server restarts).
-// shortcut: prices are not saved; persist them if players start timing restarts.
-const market = { prices: Object.fromEntries(STOCKS.map(s => [s.id, s.base])), hist: Object.fromEntries(STOCKS.map(s => [s.id, [s.base]])) };
+// Stock exchange: cryptos move every 5 s, stocks every 20 s; prices survive restarts (data/market.json).
+const market = { prices: {}, open: {}, hist: {} };
+const savedMarket = db.loadMarket();
+for (const s of STOCKS) {
+  const v = savedMarket[s.id]?.price, price = Number.isFinite(v) && v > 0 ? v : s.base;
+  market.prices[s.id] = price;
+  market.open[s.id] = price;
+  market.hist[s.id] = (savedMarket[s.id]?.hist || []).filter(x => Number.isFinite(x) && x > 0).slice(-119).concat(price);
+}
+let marketTick = 0;
 setInterval(() => {
+  marketTick++;
   for (const s of STOCKS) {
+    if (marketTick % s.every) continue;
     const [price, event] = step(market.prices[s.id], s);
     const old = market.prices[s.id];
     market.prices[s.id] = price;
     market.hist[s.id].push(price);
-    if (market.hist[s.id].length > 40) market.hist[s.id].shift();
+    if (market.hist[s.id].length > 120) market.hist[s.id].shift();
     if (event) {
-      io.emit('say', event === 'krach' ? `📉 KRACH ! ${s.name} s'effondre (${old} -> ${price})` : `📈 ENVOLEE ! ${s.name} explose (${old} -> ${price})`);
+      io.emit('say', event === 'krach' ? `📉 KRACH ! ${s.name} s'effondre (${fmtPrice(old)} -> ${fmtPrice(price)})` : `📈 ENVOLEE ! ${s.name} explose (${fmtPrice(old)} -> ${fmtPrice(price)})`);
       for (const p of players.values()) if (p.stocks[s.id]) ring(p);
     }
   }
   io.emit('market', market);
-}, 20000);
+}, 5000);
 
 const has = (p, id) => ITEMS[id] && (ITEMS[id].price === 0 || p.owned.includes(id));
 // Keeps only items the player is allowed to wear, in the right slot.
@@ -132,16 +137,58 @@ function cleanOutfit(p, o) {
   return out;
 }
 
+// Login attempts: 5 failures for a pseudo or a connection lock it for a minute.
+const fails = new Map();
+const blocked = key => (fails.get(key)?.until || 0) > Date.now();
+function fail(key) {
+  const f = fails.get(key) || { n: 0, until: 0 };
+  if (++f.n >= 5) { f.until = Date.now() + 60000; f.n = 0; }
+  fails.set(key, f);
+}
+const cleanName = n => String(n || '').replace(/[^\p{L}\p{N} _-]/gu, '').trim().slice(0, 12);
+const validPass = s => typeof s === 'string' && s.length >= 4 && s.length <= 64;
+
 io.on('connection', socket => {
   let p = null;
 
-  socket.on('join', m => {
-    if (p || !m || typeof m !== 'object') return;
-    const name = String(m.name || '').replace(/[^\p{L}\p{N} _-]/gu, '').trim().slice(0, 12) || 'Joueur';
+  // ---------- accounts ----------
+  const authError = (msg, expired = false) => socket.emit('auth:error', { msg, expired });
+  socket.on('register', m => {
+    if (p || !m) return;
+    const name = cleanName(m.name), pass = m.pass;
+    if (blocked(socket.id)) return authError('Trop d\'essais, reessaie dans une minute.');
+    if (name.length < 2) return authError('Pseudo : 2 a 12 lettres ou chiffres.');
+    if (!validPass(pass)) return authError('Mot de passe : 4 a 64 caracteres.');
+    if (db.getPlayer(name)) { fail(socket.id); return authError('Ce pseudo est deja pris. Si c\'est le tien, utilise Connexion.'); }
     const color = COLORS.includes(m.color) ? m.color : COLORS[0];
-    if ([...players.values()].some(o => o.name.toLowerCase() === name.toLowerCase())) return socket.emit('joinError', 'Ce pseudo est déjà dans le casino.');
-    const sv = saved[name.toLowerCase()] || {};
-    p = { id: socket.id, name, color, x: SPAWN.x + (Math.random() * 40 - 20) | 0, y: SPAWN.y, dir: 3, moving: false, chips: sv.chips ?? 1000, seat: null, drunk: 0, zone: 'casino', vip: [1, 2, 3].includes(sv.vip) ? sv.vip : 0 };
+    const acc = db.createPlayer(name, pass, color);
+    enter(acc, m.remember ? db.createSession(acc.id) : null);
+  });
+  socket.on('login', m => {
+    if (p || !m) return;
+    const name = cleanName(m.name), pass = m.pass, key = 'name:' + name.toLowerCase();
+    if (blocked(key) || blocked(socket.id)) return authError('Trop d\'essais, reessaie dans une minute.');
+    if (!validPass(pass)) return authError('Mot de passe : 4 a 64 caracteres.');
+    const acc = db.getPlayer(name);
+    if (!acc) { fail(socket.id); return authError('Compte introuvable. Cree-le dans « Creer un compte ».'); }
+    if (!acc.passHash) { // account imported from the old saves: the first login sets its password
+      db.setPassword(acc.id, pass);
+      socket.emit('say', 'Compte existant retrouve : ton mot de passe est enregistre.');
+    } else if (!checkPassword(pass, acc.passHash, acc.salt)) { fail(key); fail(socket.id); return authError('Mot de passe incorrect.'); }
+    enter(acc, m.remember ? db.createSession(acc.id) : null);
+  });
+  socket.on('resume', token => {
+    if (p) return;
+    const acc = db.playerBySession(token);
+    if (!acc) return authError('Session expiree, reconnecte-toi.', true);
+    enter(acc, null);
+  });
+  socket.on('logout', token => db.deleteSession(token));
+
+  function enter(sv, token) {
+    if ([...players.values()].some(o => o.name.toLowerCase() === sv.name.toLowerCase())) return authError('Ce compte est deja connecte.');
+    const name = sv.name, color = COLORS.includes(sv.color) ? sv.color : COLORS[0];
+    p = { id: socket.id, dbId: sv.id, name, color, x: SPAWN.x + (Math.random() * 40 - 20) | 0, y: SPAWN.y, dir: 3, moving: false, chips: sv.chips ?? 1000, seat: null, drunk: 0, zone: 'casino', vip: [1, 2, 3].includes(sv.vip) ? sv.vip : 0 };
     if (p.chips < BROKE) Object.assign(p, { zone: 'street', homeless: true, x: ST_SPAWN.x, y: ST_SPAWN.y, dir: 0 });
     p.owned = Array.isArray(sv.owned) ? sv.owned.filter(id => ITEMS[id]) : [];
     p.outfit = cleanOutfit(p, sv.outfit);
@@ -151,6 +198,7 @@ io.on('connection', socket => {
     p.history = Array.isArray(sv.history) ? sv.history.slice(0, 20) : [];
     p.curve = [p.chips];
     players.set(p.id, p);
+    socket.emit('auth:ok', { token });
     socket.emit('welcome', { id: p.id, x: p.x, y: p.y, zone: p.zone });
     socket.emit('bins', binsLeft());
     socket.emit('market', market);
@@ -158,7 +206,7 @@ io.on('connection', socket => {
     socket.emit('race', games.race.view(null));
     socket.emit('top', top());
     sendMe();
-  });
+  }
 
   const sendMe = () => socket.emit('me', { owned: p.owned, outfit: p.outfit, presets: p.presets, color: p.color, vip: p.vip });
 
@@ -314,14 +362,6 @@ io.on('connection', socket => {
     if (text) io.emit('chat', { id: p.id, name: p.name, color: p.color, text });
   });
 
-  // shortcut: test cheat, anyone who types "klm" gets 1M; delete this handler before playing for real.
-  socket.on('klm', () => {
-    if (!p) return;
-    p.chips += 1000000;
-    log(p, 'Code secret', 1000000);
-    socket.emit('say', '💰 Code secret : +1 000 000 jetons !');
-  });
-
   socket.on('bank:send', m => {
     const b = players.get(m?.to), amt = m?.amount;
     if (!p || !b || b === p || !Number.isInteger(amt) || amt <= 0 || amt > p.chips) return;
@@ -375,10 +415,10 @@ setInterval(() => {
   }
 }, 1000);
 
-function top() {
-  const all = { ...saved };
-  for (const p of players.values()) all[p.name.toLowerCase()] = { name: p.name, chips: p.chips };
-  return Object.values(all).sort((a, b) => b.chips - a.chips).slice(0, 5);
+function top() { // saved ranking + live chips of online players
+  const all = new Map(db.top5().map(r => [r.name.toLowerCase(), r]));
+  for (const p of players.values()) all.set(p.name.toLowerCase(), { name: p.name, chips: p.chips });
+  return [...all.values()].sort((a, b) => b.chips - a.chips).slice(0, 5);
 }
 setInterval(() => io.emit('top', top()), 2000);
 setInterval(() => { for (const p of players.values()) { p.curve.push(p.chips); if (p.curve.length > 60) p.curve.shift(); sendBank(p); } }, 60000);

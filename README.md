@@ -22,11 +22,11 @@ npm start
 
 Ouvre `http://localhost:4321`. Tes potes sur le même Wi-Fi utilisent l'adresse affichée dans le terminal.
 
-Les jetons et garde-robes sont sauvegardés dans `data/chips.json`.
+Chaque joueur a un compte (pseudo + mot de passe haché). Tout est sauvegardé dans une base SQLite, `data/casino.db` (SQLite intégré à Node, aucune installation).
 
 ## Contrôles
 
-ZQSD / flèches : bouger · E : interagir · Échap : se lever · Entrée : chat · 1-5 : emotes · M : musique · P : téléphone
+ZQSD / flèches : bouger · E : interagir · Échap : se lever · Entrée : chat · 1-5 : emotes · M : musique · P : téléphone · L : se déconnecter
 
 ## Tests
 
