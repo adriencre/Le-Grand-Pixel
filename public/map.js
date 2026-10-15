@@ -92,15 +92,18 @@ export function hits(x, y) { // feet box 8x4
 export function nearBar(p) { return p.y < 7 * T && p.x > BAR.x * T && p.x < (BAR.x + BAR.w) * T; }
 
 // ---------- the street outside the casino ----------
-export const ST = { w: 40, h: 18 }; // tiles: facade 0-5, sidewalk 6-11, road 12-14, far side 15-17
+export const ST = { w: 60, h: 18 }; // tiles: facade 0-5, sidewalk 6-11, road 12-14, far side 15-17
+export const CASINO_W = 40, RES_X = 42; // casino facade ends at CASINO_W, an alley, then the residence from RES_X
 export const ST_SPAWN = { x: 20 * T, y: 7 * T + 10 };
 export const BROKE = 10, ENTRY_MIN = 100; // under BROKE you get thrown out, ENTRY_MIN gets a homeless player back in
 export const BINS = [[3, 8], [12, 11], [27, 11], [36, 8], [32, 11]]; // feet of each trash can (tiles)
 export const BUSK = { x: 9 * T, y: 8 * T + 8 };
-export const LAMPS = [[6, 11], [15, 11], [25, 11], [35, 11]];
+export const LAMPS = [[6, 11], [15, 11], [25, 11], [35, 11], [45, 11], [57, 11]];
 export const BENCH = [29, 7];
 export const HYDRANT = [23, 11];
 export const BOUNCER = { x: 22 * T + 14, y: 6 * T + 10 };
+export const RES_DOOR = { x: 51 * T, y: 7 * T }; // door of the residence building
+export const SHARK = { x: 14 * T, y: 6 * T + 10 }; // loan shark leaning on the facade
 
 export const ST_SOLIDS = [
   [0, 0, ST.w * T, 6 * T], [0, 12 * T - 2, ST.w * T, 6 * T], [0, 0, T, ST.h * T], [(ST.w - 1) * T, 0, T, ST.h * T],
@@ -108,15 +111,18 @@ export const ST_SOLIDS = [
   ...BINS.map(([x, y]) => [x * T - 6, y * T - 5, 12, 5]),
   ...LAMPS.map(([x, y]) => [x * T - 2, y * T - 3, 4, 3]),
   [BENCH[0] * T, BENCH[1] * T - 4, 2 * T, 6], [HYDRANT[0] * T - 3, HYDRANT[1] * T - 4, 6, 4],
-  [BOUNCER.x - 5, BOUNCER.y - 4, 10, 4],
+  [BOUNCER.x - 5, BOUNCER.y - 4, 10, 4], [SHARK.x - 5, SHARK.y - 4, 10, 4],
 ];
 
-export function hitsIn(zone, x, y, vip = 0) {
-  const solids = zone === 'street' ? ST_SOLIDS : zone === 'vip' ? (vip >= 3 ? V_SOLIDS : [...V_SOLIDS, DIAMOND_DOOR]) : SOLIDS;
+// Apartments pass their own collision boxes (aptSolids in furniture.js).
+export function hitsIn(zone, x, y, vip = 0, aptSolids = []) {
+  const solids = zone.startsWith('apt:') ? aptSolids : zone === 'lobby' ? LOBBY_SOLIDS : zone === 'street' ? ST_SOLIDS : zone === 'vip' ? (vip >= 3 ? V_SOLIDS : [...V_SOLIDS, DIAMOND_DOOR]) : SOLIDS;
   return solids.some(([sx, sy, sw, sh]) => x + 4 > sx && x - 4 < sx + sw && y > sy && y - 4 < sy + sh);
 }
 export const nearDoorIn = p => Math.abs(p.x - 22 * T) < 2 * T && p.y > 25.6 * T;
 export const nearDoorOut = p => Math.abs(p.x - 20 * T) < 1.8 * T && p.y < 7.6 * T;
+export const nearResDoor = p => Math.abs(p.x - RES_DOOR.x) < 18 && p.y < 7.6 * T;
+export const nearShark = p => Math.hypot(p.x - SHARK.x, p.y - SHARK.y) < 24;
 export const nearBusk = p => Math.hypot(p.x - BUSK.x, p.y - BUSK.y) < 20;
 export const nearBin = p => BINS.findIndex(([x, y]) => Math.hypot(p.x - x * T, p.y - y * T - 6) < 22);
 
@@ -169,3 +175,30 @@ export const V_SOLIDS = [
 export const nearElevatorOut = p => Math.abs(p.x - VIP_SPAWN.x) < 2 * T && p.y > 21.4 * T;
 export const nearVipBar = p => p.x < (VIP_BAR.x + VIP_BAR.w) * T && p.y < 16.5 * T && p.y > 14.6 * T;
 export const nearDiamondDoor = p => Math.abs(p.x - 20.5 * T) < 2 * T && Math.abs(p.y - 11.5 * T) < T;
+
+// ---------- the residence lobby: hall on the left, furniture showroom on the right ----------
+export const LW = 26, LH = 14;
+export const LOBBY_SPAWN = { x: 6.5 * T, y: 13 * T - 4 };
+export const LOBBY_ELEV = { x: 6.5 * T, y: 3 * T }; // elevator up to the apartments
+export const CONCIERGE = { x: 2.5 * T, y: 6 * T - 1 };
+export const SELLER = { x: 22.5 * T, y: 10 * T + 1 };
+// Showroom podiums (tiles) with the furniture on display.
+export const PODIUMS = [
+  { x: 15, y: 4, w: 4, h: 3, items: [{ id: 'tapis', x: 15, y: 5 }, { id: 'canape', x: 15, y: 4 }, { id: 'lampe', x: 18, y: 4 }, { id: 'fauteuil', x: 18, y: 6 }] },
+  { x: 20, y: 4, w: 4, h: 3, items: [{ id: 'lit', x: 20, y: 4 }, { id: 'etagere', x: 22, y: 4 }, { id: 'aquarium', x: 22, y: 6 }, { id: 'tapis_rond', x: 20, y: 6 }] },
+  { x: 15, y: 9, w: 4, h: 3, items: [{ id: 'plan_travail', x: 15, y: 9 }, { id: 'plaques', x: 17, y: 9 }, { id: 'frigo', x: 18, y: 9 }, { id: 'bar', x: 15, y: 11 }, { id: 'tabouret', x: 17, y: 11 }] },
+];
+export const LOBBY_PLANTS = [[1, 3], [12, 3], [1, 12], [11, 12], [24, 3], [24, 12]];
+export const LOBBY_SOLIDS = [
+  [0, 0, LW * T, 3 * T], [0, 0, T, LH * T], [(LW - 1) * T, 0, T, LH * T], [0, (LH - 1) * T, LW * T, T],
+  [T, 6 * T, 4 * T, T], // concierge desk
+  [9 * T, 10 * T + 4, 3 * T, 8], // bench
+  [13 * T + 2, 3 * T, 12, T], [13 * T + 2, 12 * T, 12, T], // arch pillars
+  ...PODIUMS.map(p => [p.x * T, p.y * T, p.w * T, p.h * T]),
+  [21 * T, 10 * T, 3 * T, T], // showroom counter
+  ...LOBBY_PLANTS.map(([x, y]) => [x * T + 3, y * T + 8, 10, 8]),
+];
+export const nearLobbyExit = p => Math.abs(p.x - LOBBY_SPAWN.x) < 16 && p.y > 12.4 * T;
+export const nearElevatorApt = p => Math.abs(p.x - LOBBY_ELEV.x) < 24 && p.y < 4.4 * T;
+export const nearConcierge = p => p.x < 5.6 * T && p.y > 6.8 * T && p.y < 8.6 * T;
+export const nearFurnShop = p => p.x > 20.4 * T && p.x < 24.6 * T && p.y > 11 * T && p.y < 12.8 * T;

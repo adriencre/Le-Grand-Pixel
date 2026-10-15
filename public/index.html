@@ -59,6 +59,12 @@
     background: var(--panel); padding: 12px 14px; box-shadow: 0 0 0 3px #0a0410, 0 0 0 5px #6a4a7a; max-width: calc(100vw - 32px); flex-wrap: wrap; justify-content: center;
   }
   #bar .info { color: #d8c8e8; margin: 0 8px; font-size: 9px; }
+  #bar .deco-list { display: flex; flex-wrap: wrap; justify-content: center; gap: 4px; width: 100%; max-height: 112px; overflow-y: auto; }
+  #bar button.sel { box-shadow: 0 0 0 2px var(--gold); }
+  #bar .deco-tabs { display: flex; flex-wrap: wrap; justify-content: center; gap: 3px; width: 100%; }
+  #bar button.furn { display: inline-flex; flex-direction: column; align-items: center; gap: 2px; padding: 4px 6px; min-width: 64px; }
+  #bar button.furn img { height: 30px; image-rendering: pixelated; }
+  #bar button.furn span { font-size: 7px; } #bar button.furn b { font-size: 7px; color: var(--gold); font-weight: normal; }
   #bar .chips { color: var(--gold); margin: 0 10px; }
   #bar input[type=range] { width: 140px; accent-color: var(--gold); }
   #bar output { color: var(--gold); min-width: 50px; display: inline-block; text-align: center; }
@@ -67,6 +73,8 @@
   #log .sys { color: #ffe680; }
   #chat { position: fixed; left: 12px; bottom: 12px; width: 340px; max-width: calc(100vw - 24px); display: none; padding: 9px; background: #0a0410; color: #fff; border: 0; box-shadow: 0 0 0 3px var(--gold); outline: none; }
   body.seated #log { bottom: auto; top: 12px; }
+  body.film #log { display: none; }
+  body.film #bar { opacity: 0; }
 </style>
 </head>
 <body>

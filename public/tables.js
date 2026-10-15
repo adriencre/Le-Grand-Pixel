@@ -408,8 +408,9 @@ function slots(x, v, now, ui) {
     x.fillRect(X + 14 + i * 7.6 | 0, Y + 10, 3, 3); x.fillRect(X + 14 + i * 7.6 | 0, Y + 48, 3, 3);
   }
   const jc = Math.floor(now / 400) % 2 ? '#ff4aa0' : '#ffe060';
-  text(x, 'JACKPOT', 240 + 2, Y + 20 + 2, '#400010', 3, 'center');
-  text(x, 'JACKPOT', 240, Y + 20, jc, 3, 'center');
+  text(x, 'JACKPOT', 240 + 2, Y + 14 + 2, '#400010', 2, 'center');
+  text(x, 'JACKPOT', 240, Y + 14, jc, 2, 'center');
+  text(x, (v.pot || 0).toLocaleString('fr-FR'), 240, Y + 32, '#ff3a3a', 2, 'center', '#400010');
   // reel window
   const RX = 160, RY = 72, RH = 120;
   x.fillStyle = '#c8a040'; x.fillRect(RX - 6, RY - 6, 172, RH + 12);
@@ -470,6 +471,7 @@ function slots(x, v, now, ui) {
   });
   x.drawImage(symbolSprite('cherry'), 18, 192 - 2); x.drawImage(symbolSprite('cherry'), 32, 190);
   text(x, '= MISE', 110, 194, '#fff', 1, 'right');
+  text(x, 'JACKPOT : MISE 50+', 64, 210, '#ffe680', 1, 'center');
 }
 
 function slotsBar(v, ui) {

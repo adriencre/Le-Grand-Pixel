@@ -179,3 +179,78 @@ test('daily reward: streak grows day after day, resets after a gap, chest on day
   assert.equal(claimDaily(d.daily, t0 + 7 * day, []).reward.day, 1, 'after the chest a new week starts');
   assert.equal(claimDaily(r.daily, t0 + 9 * day, []).reward.day, 1, 'a missed day resets the streak');
 });
+
+test('loan shark: debt grows when late, capped', async () => {
+  const { LOAN, loanDue } = await import('../games/street.js');
+  const loan = { owe: LOAN.owe, due: 1e6 };
+  assert.equal(loanDue(loan, 1e6 - 1), 750);
+  assert.equal(loanDue(loan, 1e6 + 1), 825);
+  assert.equal(loanDue(loan, 1e6 + 300001), 908);
+  assert.equal(loanDue(loan, 1e12), Math.round(750 * 1.1 ** 10));
+});
+
+test('slots jackpot: three diamonds with a big enough bet win the pot', async t => {
+  const { Slots, jackpot, JACKPOT_SEED } = await import('../games/slots.js');
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  const s = new Slots(1, () => {}), p = { id: 'a', chips: 1000 };
+  s.sit(p);
+  jackpot.pot = 5000;
+  let won = 0;
+  jackpot.onWin = (_, amt) => { won = amt; };
+  s.act(p, { a: 'spin', bet: 100 });
+  s.reels = [5, 5, 5]; // force the outcome before the reels stop
+  t.mock.timers.tick(2200);
+  assert.equal(won, 5001);
+  assert.equal(jackpot.pot, JACKPOT_SEED);
+  assert.equal(p.chips, 1000 - 100 + 100 * 250 + 5001);
+  s.act(p, { a: 'spin', bet: 10 });
+  s.reels = [5, 5, 5];
+  won = 0;
+  t.mock.timers.tick(2200);
+  assert.equal(won, 0); // bet under JACKPOT_MIN: normal payout only
+});
+
+test('apartments: furniture placement rules', async () => {
+  const { fits, cleanApt } = await import('../public/furniture.js');
+  const apt = cleanApt({ size: 0, items: [] }); // studio 12x9: floor rows 3..7, door at column 6
+  assert.ok(fits(apt, 'canape', 1, 3));
+  assert.ok(!fits(apt, 'canape', 0, 3)); // in the side wall
+  assert.ok(!fits(apt, 'canape', 9, 3)); // 9 + 3 > 11
+  assert.ok(!fits(apt, 'canape', 1, 2)); // on the back wall
+  assert.ok(fits(apt, 'poster', 1, 0) && !fits(apt, 'poster', 1, 3)); // wall items go on the wall only
+  assert.ok(!fits(apt, 'fauteuil', 6, 7)); // blocks the door
+  assert.ok(fits(apt, 'tapis_rond', 5, 6)); // rugs can go in front of the door
+  apt.items.push({ id: 'canape', x: 1, y: 3 });
+  assert.ok(!fits(apt, 'fauteuil', 2, 3));
+  assert.ok(fits(apt, 'fauteuil', 2, 3, 0)); // moving the sofa itself
+  assert.ok(fits(apt, 'tapis', 1, 3)); // a rug under the sofa
+});
+
+test('apartments: saved data is cleaned, misplaced furniture goes back to the stock', async () => {
+  const { cleanApt } = await import('../public/furniture.js');
+  const a = cleanApt({ size: 9, wall: 'w_or', styles: ['w_or', 'nope'], items: [{ id: 'lit', x: 1, y: 3 }, { id: 'lit', x: 2, y: 4 }, { id: 'hack', x: 5, y: 5 }, { id: 'chaise', x: 50, y: 1 }], stock: { lampe: 2, hack: 5, plante: -1 } });
+  assert.equal(a.size, 0);
+  assert.equal(a.wall, 'w_or');
+  assert.deepEqual(a.styles, ['w_or']);
+  assert.deepEqual(a.items.map(i => i.id), ['lit']);
+  assert.deepEqual(a.stock, { lampe: 2, lit: 1, chaise: 1 });
+  assert.equal(cleanApt({ wall: 'w_or' }).wall, 'w_creme'); // not bought
+  assert.deepEqual(cleanApt(undefined).items.map(i => i.id), ['lit', 'tapis_rond', 'plante', 'poster']); // the starter studio
+});
+
+test('apartments: windows stay clear, every piece of furniture is in a showroom department', async () => {
+  const { fits, cleanApt, FURNITURE, CATS, aptWindows } = await import('../public/furniture.js');
+  const studio = cleanApt({ size: 0, items: [] }), pent = cleanApt({ size: 2, items: [] });
+  assert.ok(!fits(studio, 'poster', 5, 1)); // the studio window is at columns 4-7
+  assert.ok(fits(studio, 'poster', 8, 1));
+  assert.ok(!fits(pent, 'tableau', 10, 0) && fits(pent, 'tableau', 2, 0)); // the penthouse bay window
+  assert.equal(aptWindows(cleanApt({ size: 1 })).length, 2);
+  const cats = new Set(CATS.map(c => c[0]));
+  for (const [id, d] of Object.entries(FURNITURE)) {
+    assert.ok(cats.has(d.cat), id + ' has a department');
+    assert.ok([0, 1, 2, 3].includes(d.rarity), id + ' has a rarity');
+    assert.ok(d.w >= 1 && d.h >= 1 && ['obj', 'rug', 'wall'].includes(d.layer), id);
+  }
+  // a saved wall item over a window goes back to the stock
+  assert.deepEqual(cleanApt({ size: 0, items: [{ id: 'tableau', x: 4, y: 1 }] }).stock, { tableau: 1 });
+});

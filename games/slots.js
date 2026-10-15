@@ -4,6 +4,10 @@ export const SYMS = ['cherry', 'lemon', 'bell', 'bar', 'seven', 'diamond'];
 export const WEIGHTS = [6, 5, 4, 3, 2, 1];
 export const PAY3 = [10, 15, 20, 40, 100, 250];
 export const BETS = [10, 25, 50, 100];
+// Progressive pot shared by every machine: 1% of each bet feeds it, three diamonds with a bet of JACKPOT_MIN+ win it.
+// The 1% comes from the house (payouts are unchanged), which keeps the machines just under 100% return.
+export const JACKPOT_SEED = 2000, JACKPOT_MIN = 50;
+export const jackpot = { pot: JACKPOT_SEED, onWin: null }; // onWin(p, amount) is set by the server
 
 export function slotPay(r, bet) {
   if (r[0] === r[1] && r[1] === r[2]) return bet * PAY3[r[0]];
@@ -38,6 +42,7 @@ export class Slots {
   act(p, m) {
     if (this.seats[0]?.p !== p || this.spinning || m.a !== 'spin' || !Number.isInteger(m.bet) || m.bet < BETS[0] || m.bet > BETS.at(-1) * 3 || p.chips < m.bet) return;
     p.chips -= m.bet;
+    jackpot.pot += Math.ceil(m.bet / 100);
     this.bet = m.bet;
     this.reels = [roll(), roll(), roll()];
     this.spinning = true;
@@ -46,6 +51,12 @@ export class Slots {
     this.notify();
     setTimeout(() => {
       this.win = slotPay(this.reels, m.bet);
+      if (m.bet >= JACKPOT_MIN && this.reels.every(r => r === 5)) {
+        const pot = jackpot.pot;
+        jackpot.pot = JACKPOT_SEED;
+        this.win += pot;
+        jackpot.onWin?.(p, pot);
+      }
       p.chips += this.win;
       this.spinning = false;
       this.notify();
@@ -54,6 +65,6 @@ export class Slots {
 
   view() {
     const s = this.seats[0];
-    return { reels: this.reels, bet: this.bet, spinId: this.spinId, spinning: !!this.spinning, win: this.win || 0, seats: [s && { id: s.p.id, name: s.p.name, color: s.p.color, chips: s.p.chips, me: true }] };
+    return { reels: this.reels, bet: this.bet, spinId: this.spinId, spinning: !!this.spinning, win: this.win || 0, pot: jackpot.pot, seats: [s && { id: s.p.id, name: s.p.name, color: s.p.color, chips: s.p.chips, me: true }] };
   }
 }

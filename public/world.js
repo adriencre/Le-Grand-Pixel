@@ -138,13 +138,14 @@ function tableDecor(x, t, now) {
 }
 
 // ---------- the room ----------
-export function drawWorld(x, cam, now, players, meId, prompts, race, top) {
+export function drawWorld(x, cam, now, players, meId, prompts, race, top, pot) {
   const t = now / 1000;
   x.drawImage(background(), -cam.x, -cam.y);
   x.save();
   x.translate(-cam.x, -cam.y);
 
   neonSigns(x, t);
+  if (pot) text(x, 'JACKPOT ' + pot.toLocaleString('fr-FR'), 11 * T + 8, 32, Math.floor(t * 2.5) % 2 ? '#ff4aa0' : '#ffe060', 1, 'center', '#000');
 
   const objs = [];
   tableObjs(x, objs, TABLES, players, now, race);
@@ -438,8 +439,8 @@ function lights(x, t) {
 }
 
 // ---------- movement ----------
-export function move(me, keys, dt, drunk = 0, zone = 'casino', vip = 0) {
-  const hits = (x, y) => hitsIn(zone, x, y, vip);
+export function move(me, keys, dt, drunk = 0, zone = 'casino', vip = 0, solids) {
+  const hits = (x, y) => hitsIn(zone, x, y, vip, solids);
   let dx = (keys.right ? 1 : 0) - (keys.left ? 1 : 0), dy = (keys.down ? 1 : 0) - (keys.up ? 1 : 0);
   me.moving = !!(dx || dy);
   if (!me.moving) return;

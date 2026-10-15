@@ -17,7 +17,7 @@ export function checkPassword(pass, hash, salt) {
 }
 
 // Fields kept as JSON in the `data` column (everything that is nested).
-const DATA = ['owned', 'outfit', 'presets', 'stocks', 'history', 'daily'];
+const DATA = ['owned', 'outfit', 'presets', 'stocks', 'history', 'daily', 'achievements', 'loan', 'apt'];
 
 export function openDb(file) {
   const db = new DatabaseSync(file);
@@ -31,6 +31,7 @@ export function openDb(file) {
     CREATE TABLE IF NOT EXISTS market (id TEXT PRIMARY KEY, price REAL NOT NULL, hist TEXT NOT NULL);
     CREATE TABLE IF NOT EXISTS messages (id INTEGER PRIMARY KEY, from_id INTEGER NOT NULL, to_id INTEGER NOT NULL,
       text TEXT NOT NULL, at INTEGER NOT NULL, read INTEGER NOT NULL DEFAULT 0);
+    CREATE TABLE IF NOT EXISTS meta (k TEXT PRIMARY KEY, v TEXT NOT NULL);
     CREATE INDEX IF NOT EXISTS messages_pair ON messages (from_id, to_id, at);
   `);
   const st = {
@@ -39,6 +40,7 @@ export function openDb(file) {
     insert: db.prepare('INSERT INTO players (name, pass_hash, salt, created_at, chips, vip, color, data) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'),
     setPass: db.prepare('UPDATE players SET pass_hash = ?, salt = ? WHERE id = ?'),
     save: db.prepare('UPDATE players SET chips = ?, vip = ?, color = ?, data = ? WHERE id = ?'),
+    openApts: db.prepare("SELECT id, name FROM players WHERE json_extract(data, '$.apt.open') = 1 ORDER BY name LIMIT ?"),
     top: db.prepare('SELECT name, chips FROM players ORDER BY chips DESC LIMIT 5'),
     count: db.prepare('SELECT COUNT(*) AS n FROM players'),
     newSession: db.prepare('INSERT INTO sessions (token_hash, player_id, expires) VALUES (?, ?, ?)'),
@@ -55,6 +57,8 @@ export function openDb(file) {
       JOIN players p ON p.id = x.other
       WHERE x.id = (SELECT MAX(id) FROM messages y WHERE (y.from_id = ? AND y.to_id = x.other) OR (y.from_id = x.other AND y.to_id = ?))
       ORDER BY x.at DESC, x.id DESC`),
+    getMeta: db.prepare('SELECT v FROM meta WHERE k = ?'),
+    setMeta: db.prepare('INSERT INTO meta (k, v) VALUES (?, ?) ON CONFLICT(k) DO UPDATE SET v = excluded.v'),
     saveMarket: db.prepare('INSERT INTO market (id, price, hist) VALUES (?, ?, ?) ON CONFLICT(id) DO UPDATE SET price = excluded.price, hist = excluded.hist'),
   };
   const toPlayer = r => {
@@ -77,6 +81,7 @@ export function openDb(file) {
     savePlayers(list) {
       tx(() => { for (const p of list) st.save.run(p.chips, p.vip || 0, p.color, JSON.stringify(Object.fromEntries(DATA.map(k => [k, p[k]]))), p.dbId ?? p.id); });
     },
+    openApts: n => st.openApts.all(n).map(r => ({ id: r.id, name: r.name })),
     top5: () => st.top.all().map(r => ({ name: r.name, chips: r.chips })),
     createSession(playerId) {
       const token = randomBytes(32).toString('hex');
@@ -122,6 +127,9 @@ export function openDb(file) {
       return st.convo.all(meId, meId, otherId, otherId, meId).reverse().map(r => ({ text: r.text, at: r.at, mine: !!r.mine }));
     },
     contacts: meId => st.contacts.all(meId, meId, meId, meId, meId, meId).map(r => ({ name: r.name, text: r.text, at: r.at, unread: r.unread })),
+    // Small server-wide values (the slots jackpot), stored as JSON.
+    getMeta(k) { try { return JSON.parse(st.getMeta.get(k)?.v); } catch { return undefined; } },
+    setMeta: (k, v) => st.setMeta.run(k, JSON.stringify(v)),
     close: () => db.close(),
   };
   return api;

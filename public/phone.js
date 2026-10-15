@@ -1,6 +1,7 @@
 // In-game phone: home screen, Bank, Map, Camera and Stock exchange apps.
 // Drawn over the world in buffer pixels; the screen is 96x150.
 import { ITEMS } from './items.js';
+import { ACHIEVEMENTS } from './achievements.js';
 import { T, MW, MH, ST, VW, VH, TABLES } from './map.js';
 import { canvas, text as pixelText, chipSprite } from './sprites.js';
 
@@ -100,13 +101,14 @@ function cracks(x, X, Y) {
 }
 
 // ---------- apps ----------
-const APPS = [['msgs', 'MESSAGES', '#22c4c4'], ['bank', 'BANQUE', '#e8b830'], ['map', 'PLAN', '#2fb36b'], ['photo', 'PHOTO', '#3a7bd5'], ['stocks', 'BOURSE', '#ff4ab0']];
+const APPS = [['msgs', 'MESSAGES', '#22c4c4'], ['bank', 'BANQUE', '#e8b830'], ['map', 'PLAN', '#2fb36b'], ['photo', 'PHOTO', '#3a7bd5'], ['stocks', 'BOURSE', '#ff4ab0'], ['trophy', 'SUCCES', '#d08020']];
 const appPos = i => [6 + (i % 3) * 31, 56 + Math.floor(i / 3) * 44];
 const ICON_GRIDS = {
   bank: ['....aa....', '..aaaaaa..', 'aaaaaaaaaa', '.a.a.a.a..', '.a.a.a.a..', '.a.a.a.a..', 'aaaaaaaaaa'],
   map: ['aa..aa..aa', 'a.aa.aa.aa', 'a.aa.aa.aa', 'aa.a.aaa.a', 'a.aa.aa.aa', 'aa..aa..aa', '..........'],
   photo: ['...aaa....', 'aaaaaaaaaa', 'a...aa...a', 'a..a..a..a', 'a..a..a..a', 'a...aa...a', 'aaaaaaaaaa'],
   msgs: ['.aaaaaaaa.', 'aaaaaaaaaa', 'a........a', 'a.aa.aa.aa', 'a........a', 'aaaaaaaaaa', '.aa.......'],
+  trophy: ['aaaaaaaaaa', 'aaaaaaaaaa', '.aaaaaaaa.', '..aaaaaa..', '....aa....', '....aa....', '..aaaaaa..'],
   stocks: ['.........a', '........aa', '.....a.a..', '....a.a...', '.a.a......', 'a.a.......', 'aaaaaaaaaa'],
 };
 function appIcon(x, id, col, X, Y) {
@@ -199,6 +201,7 @@ const ZONES = [['casino', 'CASINO', MW, MH], ['vip', 'VIP', VW, VH], ['street', 
 export function activity(p) {
   if (p.seat) return TABLES.find(t => t.id === p.seat.t)?.name || 'A UNE TABLE';
   if (p.busking) return 'FAIT LA MANCHE';
+  if (p.zone?.startsWith('apt:')) return 'CHEZ ' + (p.aptName || '?');
   return { casino: 'CASINO', vip: 'ETAGE VIP', street: p.homeless ? 'SDF DANS LA RUE' : 'DANS LA RUE' }[p.zone || 'casino'];
 }
 function map(x, X, Y, S, now) {
@@ -318,6 +321,21 @@ function download(i) {
   const a = document.createElement('a');
   a.href = c.toDataURL('image/png'); a.download = `grand-pixel-${Date.now()}.png`;
   document.body.append(a); a.click(); a.remove();
+}
+
+// ---------- achievements ----------
+function trophy(x, X, Y, S) {
+  header(x, X, Y, 'SUCCES');
+  const ids = Object.keys(ACHIEVEMENTS), got = new Set(S.achievements);
+  text(x, `${got.size} / ${ids.length} DEBLOQUES`, X + SW / 2, Y + 25, '#ffe680', 1, 'center');
+  x.save(); x.beginPath(); x.rect(X, Y + 33, SW, SH - 33); x.clip();
+  ids.forEach((id, i) => {
+    const yy = Y + 34 + i * 17 - phone.scroll, on = got.has(id);
+    x.fillStyle = on ? 'rgba(232,184,48,.18)' : 'rgba(255,255,255,.05)'; x.fillRect(X + 2, yy, SW - 4, 16);
+    text(x, on ? ACHIEVEMENTS[id][0] : '???', X + 5, yy + 2, on ? '#ffe680' : '#6a6080');
+    text(x, ACHIEVEMENTS[id][1], X + 5, yy + 9, on ? '#d8d0e8' : '#5a5070');
+  });
+  x.restore();
 }
 
 // ---------- private messages ----------
@@ -507,7 +525,7 @@ function drawPhoneAt(x, w, h, now, S) {
   x.save(); x.beginPath(); x.rect(X, Y, SW, SH); x.clip();
   wallpaper(x, ITEMS[S.me.outfit?.wallpaper]?.style, X, Y, SW, SH, now);
   if (phone.app !== 'home') { x.fillStyle = 'rgba(8,4,16,.82)'; x.fillRect(X, Y, SW, SH); }
-  ({ home, bank, send, map, photo, gallery, stocks, msgs, newmsg, convo })[phone.app](x, X, Y, S, now);
+  ({ home, bank, send, map, photo, gallery, stocks, msgs, newmsg, convo, trophy })[phone.app](x, X, Y, S, now);
   statusBar(x, X, Y, S.me.homeless, now);
   if (phone.notif && now - phone.notif.at < 4000) {
     x.fillStyle = 'rgba(30,20,50,.95)'; x.fillRect(X + 2, Y + 11, SW - 4, 16);

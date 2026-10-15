@@ -1,5 +1,5 @@
 // The street in front of the casino, at night: facade, sidewalk, road, passers-by, pigeons, trash cans.
-import { T, ST, BINS, BUSK, LAMPS, BENCH, HYDRANT, BOUNCER, ENTRY_MIN, nearDoorOut, nearBusk, nearBin } from './map.js';
+import { T, ST, BINS, BUSK, LAMPS, BENCH, HYDRANT, BOUNCER, SHARK, RES_DOOR, CASINO_W, RES_X, ENTRY_MIN, nearDoorOut, nearBusk, nearBin, nearShark, nearResDoor } from './map.js';
 import { canvas, text, label, plantSprite } from './sprites.js';
 import { drawAvatar } from './avatar.js';
 import { BY_SLOT, NPC_OUTFITS, SKINS, HAIR_COLORS } from './items.js';
@@ -8,6 +8,16 @@ import { darkness, twilight } from './daylight.js';
 
 const W = ST.w * T, H = ST.h * T;
 const DOOR_X = 20 * T;
+const CW = CASINO_W * T, RX = RES_X * T; // end of the casino facade, start of the residence
+// Residence windows: [x, y, curtain colour, kind] — kind 'b' has a balcony, 'f' a flower box, 'g' is a ground-floor window.
+const CURTAINS = ['#e04050', '#3a7bd5', '#2fb36b', '#f2b233', '#9b51e0', '#ff7a2f'];
+const RES_WIN = [];
+for (let k = 0; k < 6; k++) {
+  const wx = RX + 16 + k * 44;
+  RES_WIN.push([wx, 10, CURTAINS[(k * 5) % 6], k % 2 ? 'f' : 'b']);
+  if (k !== 3) RES_WIN.push([wx, 36, CURTAINS[(k * 5 + 2) % 6], 'f']);
+  if (k !== 2 && k !== 3) RES_WIN.push([wx, 62, CURTAINS[(k + 4) % 6], 'g']);
+}
 
 // ---------- static background ----------
 let bg = null;
@@ -16,12 +26,12 @@ function background() {
   const [c, x] = canvas(W, H);
   const px = (col, X, Y, w = 1, h = 1) => { x.fillStyle = col; x.fillRect(X, Y, w, h); };
   // facade: bricks, warm windows, marble base with gold pilasters
-  for (let y = 0; y < 6 * T; y++) for (let X = 0; X < W; X++) {
+  for (let y = 0; y < 6 * T; y++) for (let X = 0; X < CW; X++) {
     const row = Math.floor(y / 4), mortar = y % 4 === 3 || (X + (row % 2) * 6) % 12 === 0;
     px(mortar ? '#240c18' : (X * 7 + row * 3) % 13 ? '#3c1428' : '#46182e', X, y);
   }
-  px('#c8a040', 0, 3, W, 2); px('#c8a040', 0, 52, W, 2);
-  for (let X = 24; X < W - 24; X += 56) {
+  px('#c8a040', 0, 3, CW, 2); px('#c8a040', 0, 52, CW, 2);
+  for (let X = 24; X < CW - 24; X += 56) {
     if (Math.abs(X + 14 - DOOR_X) < 60) continue;
     px('#c8a040', X - 2, 14, 32, 30);
     px('#ffcf78', X, 16, 28, 26);
@@ -30,9 +40,11 @@ function background() {
     if ((X / 56) % 3 < 1) { px('#5a3020', X + 4, 30, 5, 12); px('#5a3020', X + 5, 27, 3, 3); } // silhouettes
     if ((X / 56) % 4 > 2) { px('#5a3020', X + 18, 32, 5, 10); px('#5a3020', X + 19, 29, 3, 3); }
   }
-  px('#1c1424', 0, 56, W, 40);
-  for (let X = 8; X < W; X += 32) { px('#2a2234', X, 56, 6, 40); px('#c8a040', X, 56, 6, 2); px('#c8a040', X, 92, 6, 2); }
-  px('#0e0a14', 0, 94, W, 2);
+  px('#1c1424', 0, 56, CW, 40);
+  for (let X = 8; X < CW; X += 32) { px('#2a2234', X, 56, 6, 40); px('#c8a040', X, 56, 6, 2); px('#c8a040', X, 92, 6, 2); }
+  px('#0e0a14', 0, 94, CW, 2);
+  alley(x, px);
+  residence(x, px);
   // entrance: golden frame, glass doors, red canopy
   px('#c8a040', DOOR_X - 34, 44, 68, 52);
   px('#1a1420', DOOR_X - 30, 50, 60, 46);
@@ -59,7 +71,8 @@ function background() {
   px('#c8c8d0', 0, 15 * T, W, 2);
   // far sidewalk and shops across the street
   for (let y = 15 * T + 2; y < 16 * T; y++) for (let X = 0; X < W; X++) px((X + y) % 16 ? '#5e5e68' : '#4a4a52', X, y);
-  const shops = [[0, 160, '#1c3a2a', 'PRETEUR SUR GAGES', '#60ff80'], [168, 160, '#3a1414', 'PIZZA', '#ffb040'], [336, 150, '#14223a', 'HOTEL', '#80c0ff'], [494, 146, '#2a2a2a', 'LAVERIE', '#ff80d0']];
+  const shops = [[0, 160, '#1c3a2a', 'PRETEUR SUR GAGES', '#60ff80'], [168, 160, '#3a1414', 'PIZZA', '#ffb040'], [336, 150, '#14223a', 'HOTEL', '#80c0ff'], [494, 146, '#2a2a2a', 'LAVERIE', '#ff80d0'],
+    [648, 140, '#1a3a1a', 'FLEURISTE', '#ff80a0'], [796, 148, '#3a2a14', 'BOULANGERIE', '#ffd060']];
   for (const [sx, sw, col, name, neon] of shops) {
     px(col, sx, 16 * T, sw, 2 * T);
     for (let k = 0; k < sw - 8; k += 8) px(k % 16 ? '#e8e8e8' : neon, sx + 4 + k, 16 * T, 8, 5); // awning
@@ -74,6 +87,54 @@ function background() {
   text(x, 'HOME', T + 16, 6 * T + 4, '#5a4020', 1, 'center');
   px('#3a5a8a', T + 4, 7 * T + 8, 20, 6); // sleeping bag
   return (bg = c);
+}
+
+// The dark alley between the casino and the residence: drainpipe, dumpster, a sleeping cat.
+function alley(x, px) {
+  for (let y = 0; y < 6 * T; y++) for (let X = CW; X < RX; X++) px((y % 6 === 5 || (X + Math.floor(y / 6) * 5) % 10 === 0) ? '#100a10' : '#1c1420', X, y);
+  px('#000', CW, 0, 2, 6 * T); px('#000', RX - 2, 0, 2, 6 * T);
+  px('#4a4a54', CW + 4, 0, 3, 6 * T); for (let y = 8; y < 6 * T; y += 22) px('#5a5a64', CW + 3, y, 5, 2); // drainpipe
+  px('#2a4a34', CW + 10, 74, 20, 20); px('#3a6a48', CW + 9, 72, 22, 4); px('#1a2a20', CW + 10, 84, 20, 1); // dumpster
+  px('#2a2a2a', CW + 18, 66, 8, 5); px('#2a2a2a', CW + 18, 64, 2, 2); px('#2a2a2a', CW + 24, 64, 2, 2); px('#2a2a2a', CW + 26, 69, 5, 1); // cat
+}
+
+// The residence: cream stone, curtains, flower boxes, wrought-iron balconies, green door and awning.
+function residence(x, px) {
+  const X1 = (ST.w - 1) * T;
+  for (let y = 0; y < 6 * T; y++) for (let X = RX; X < X1; X++) {
+    const course = y % 8 === 7, joint = (X + Math.floor(y / 8) * 11) % 22 === 0;
+    px(course || joint ? '#cfc2a2' : (X * 3 + y * 5) % 31 === 0 ? '#ddd0b2' : '#e8dcc0', X, y);
+  }
+  px('#b8a880', RX, 0, X1 - RX, 6); for (let X = RX; X < X1; X += 6) px('#9a8a64', X, 6, 3, 2); // cornice with dentils
+  px('#c8b890', RX, 33, X1 - RX, 2); px('#c8b890', RX, 58, X1 - RX, 2); // floor bands
+  px('#a8987a', RX, 92, X1 - RX, 4); // plinth
+  for (const [wx, wy, curtain, kind] of RES_WIN) {
+    const h = kind === 'g' ? 22 : 18;
+    px('#f4f0e8', wx - 2, wy - 2, 24, h + 4);
+    px('#4a6a8a', wx, wy, 20, h); px('#6a8aaa', wx + 2, wy + 1, 3, h - 2);
+    px(curtain, wx, wy, 5, h); px(curtain, wx + 15, wy, 5, h); px('rgba(255,255,255,.25)', wx + 1, wy, 1, h);
+    px('#f4f0e8', wx + 9, wy, 2, h);
+    px('#d8d0c0', wx - 3, wy + h + 1, 26, 2); // sill
+    if (kind === 'f') { px('#7a4a24', wx - 1, wy + h - 2, 22, 4); for (let k = 0; k < 6; k++) { px('#2f8a3c', wx + k * 4, wy + h - 5, 3, 3); px(['#e04050', '#ff80d0', '#ffe060'][k % 3], wx + 1 + k * 4, wy + h - 6, 2, 2); } }
+    if (kind === 'b') { px('#1a1a1a', wx - 4, wy + h - 4, 28, 1); px('#1a1a1a', wx - 4, wy + h + 3, 28, 1); for (let k = 0; k <= 28; k += 3) px('#1a1a1a', wx - 4 + k, wy + h - 4, 1, 8); }
+    if (kind === 'g') { px('#2f8a3c', wx - 2, wy + h + 3, 24, 4); px('#4cbc52', wx, wy + h + 2, 20, 2); }
+  }
+  const D = RES_DOOR.x;
+  // name plate where the middle window would be
+  px('#2a4a34', D - 26, 36, 52, 18); px('#c8a040', D - 25, 37, 50, 1); px('#c8a040', D - 25, 52, 50, 1);
+  text(x, 'RESIDENCE', D, 39, '#ffe680', 1, 'center'); text(x, 'LES PIXELS', D, 46, '#f0e0b0', 1, 'center');
+  // door: stone frame, green double door with glass, brass handles, step
+  px('#b8a880', D - 18, 60, 36, 36); px('#1f5a3a', D - 15, 64, 30, 32); px('#164a2e', D, 64, 1, 32);
+  for (const dx of [-13, 2]) { px('#9ac8e0', D + dx, 67, 11, 12); px('#c8e4f0', D + dx + 1, 68, 2, 10); px('#164a2e', D + dx, 73, 11, 1); }
+  px('#c8a040', D - 4, 82, 2, 4); px('#c8a040', D + 3, 82, 2, 4);
+  px('#d8ccb0', D - 20, 94, 40, 3);
+  // green striped awning
+  for (let k = 0; k < 13; k++) px(k % 2 ? '#f0f0e8' : '#2f8a3c', D - 26 + k * 4, 56, 4, 6);
+  for (let k = 0; k < 13; k++) px(k % 2 ? '#d8d8d0' : '#1f6a2c', D - 26 + k * 4, 62, 4, 2);
+  // number, intercom, planters
+  px('#2a4a8a', D - 30, 70, 9, 7); text(x, '42', D - 25, 71, '#fff', 1, 'center');
+  px('#c8a040', D + 22, 68, 7, 12); for (let k = 0; k < 4; k++) px('#5a4020', D + 24, 70 + k * 2, 3, 1);
+  for (const sx of [D - 44, D + 34]) { px('#7a7a82', sx, 84, 12, 12); px('#8a8a92', sx, 84, 12, 2); px('#2f8a3c', sx - 1, 74, 14, 11); px('#4cbc52', sx + 2, 75, 8, 4); }
 }
 
 // ---------- passers-by, pigeons, cars ----------
@@ -196,7 +257,7 @@ function ropes(x) {
 }
 
 // ---------- the scene ----------
-export const streetState = { bins: BINS.map(() => ({ until: 0, shakeUntil: 0 })), bouncerSay: null };
+export const streetState = { bins: BINS.map(() => ({ until: 0, shakeUntil: 0 })), bouncerSay: null, sharkSay: null };
 export function floatAt(x, y, text) { coins.push({ text, x, y, t0: performance.now() }); }
 
 export function drawStreet(x, cam, now, players, meId, prompts) {
@@ -213,6 +274,11 @@ export function drawStreet(x, cam, now, players, meId, prompts) {
   } else text(x, 'LE GRAND PIXEL', DOOR_X, 20, '#7a4a62', 2, 'center', '#2a1020');
   for (let k = 0; k < 10; k++) { x.fillStyle = lit && (k + Math.floor(t * 6)) % 3 === 0 ? '#fff6a0' : '#806020'; x.fillRect(DOOR_X - 38 + k * 8, 48, 4, 3); }
   ropes(x);
+  if (dark > 0.3) for (const [wx, wy, , kind] of RES_WIN) if (seeded(wx * 3 + wy) > 0.35) { // lit flats at night
+    const hh = kind === 'g' ? 22 : 18;
+    x.fillStyle = `rgba(255,200,110,${0.6 * dark})`; x.fillRect(wx + 5, wy, 10, hh);
+  }
+  if (dark > 0.25) { x.fillStyle = '#fff0b0'; x.fillRect(RES_DOOR.x - 2, 58, 4, 2); } // lamp over the door
   // busking spot
   x.fillStyle = '#b08850'; x.fillRect(BUSK.x - 14, BUSK.y - 6, 28, 12);
   x.fillStyle = '#8a6838'; x.fillRect(BUSK.x - 14, BUSK.y + 4, 28, 2);
@@ -230,6 +296,10 @@ export function drawStreet(x, cam, now, players, meId, prompts) {
   objs.push([HYDRANT[1] * T, () => { const hx = HYDRANT[0] * T, hy = HYDRANT[1] * T; x.fillStyle = '#c02020'; x.fillRect(hx - 3, hy - 9, 6, 9); x.fillRect(hx - 4, hy - 6, 8, 2); x.fillStyle = '#e04040'; x.fillRect(hx - 2, hy - 10, 4, 2); }]);
   for (const sx of [DOOR_X - 46, DOOR_X + 32]) objs.push([6 * T + 4, () => x.drawImage(plantSprite(), sx, 6 * T - 13)]);
   objs.push([BOUNCER.y, () => drawAvatar(x, BOUNCER.x, BOUNCER.y, NPC_OUTFITS.bouncer, '#222', 0, 0, now)]);
+  // the loan shark leaves his spot to follow a late debtor around
+  const debtor = players.find(p => p.shark), shark = debtor ? { x: debtor.x + (debtor.dir === 1 ? 16 : -16), y: debtor.y - 2 } : SHARK;
+  objs.push([shark.y, () => drawAvatar(x, shark.x, shark.y, NPC_OUTFITS.shark, '#222', debtor ? (debtor.x > shark.x ? 2 : 1) : 0, debtor?.moving ? 1 + Math.floor(now / 160) % 2 : 0, now)]);
+  if (!debtor) text(x, 'PRETS', SHARK.x, SHARK.y - 40, '#60ff80', 1, 'center', '#000');
   for (const w of WALKERS) {
     const p = walkerPos(w, now);
     objs.push([p.y, () => drawAvatar(x, p.x, p.y, w.outfit, w.color, w.dir > 0 ? 2 : 1, 1 + Math.floor(now / 160 + w.off) % 2, now)]);
@@ -263,6 +333,7 @@ export function drawStreet(x, cam, now, players, meId, prompts) {
   nightLights(x, t);
   overheads(x, players, now, meId);
   if (streetState.bouncerSay && now - streetState.bouncerSay.at < 4000) label(x, streetState.bouncerSay.text, BOUNCER.x, BOUNCER.y - 40, '#ff8080', 'rgba(20,0,0,.9)');
+  if (streetState.sharkSay && now - streetState.sharkSay.at < 4000) label(x, streetState.sharkSay.text, shark.x, shark.y - 40, '#80ff90', 'rgba(0,20,10,.9)');
   for (const pr of prompts) label(x, pr.text, pr.x, pr.y, '#ffe680', 'rgba(30,10,40,.9)');
   x.restore();
 }
@@ -286,8 +357,10 @@ function nightLights(x, t) {
   };
   if (d > 0.25) for (const [lx, ly] of LAMPS) spot(lx * T, ly * T - 20, 80, 0.9);
   spot(DOOR_X, 5 * T, 110, 0.95);
+  spot(RES_DOOR.x, 5 * T, 80, 0.9);
+  for (const [wx, wy] of RES_WIN) if (seeded(wx * 3 + wy) > 0.35) spot(wx + 10, wy + 10, 26, 0.6);
   spot(BUSK.x, BUSK.y, 40, 0.5);
-  for (let X = 24; X < W; X += 56) spot(X + 14, 30, 40, 0.5);
+  for (let X = 24; X < CW; X += 56) spot(X + 14, 30, 40, 0.5);
   spot(W / 2, 17 * T, W, 0.3);
   x.save(); x.imageSmoothingEnabled = true; x.drawImage(lc, 0, 0, W, H); x.restore();
   x.save(); x.globalCompositeOperation = 'lighter';
@@ -300,6 +373,8 @@ function nightLights(x, t) {
 export function nearbyStreet(me, players) {
   if (me.busking) return null;
   if (nearDoorOut(me)) return { kind: 'door', x: me.x, y: me.y - 44, text: me.homeless && me.chips < ENTRY_MIN ? `VIDEUR : ${ENTRY_MIN} JETONS MIN.` : 'E : ENTRER AU CASINO' };
+  if (nearResDoor(me)) return { kind: 'res', x: RES_DOOR.x, y: RES_DOOR.y - 34, text: 'E : ENTRER DANS LA RESIDENCE' };
+  if (nearShark(me)) return { kind: 'shark', x: SHARK.x, y: SHARK.y - 50, text: 'E : PARLER AU REQUIN' };
   const busker = players.find(p => p.busking && p.id !== me.id && Math.hypot(p.x - me.x, p.y - me.y) < 40);
   if (busker) return { kind: 'tip', to: busker.id, x: busker.x, y: busker.y - 52, text: 'E : DONNER 10 A ' + busker.name };
   if (nearBusk(me) && !players.some(p => p.busking)) return { kind: 'busk', x: BUSK.x, y: BUSK.y - 40, text: 'E : JOUER DE LA GUITARE' };

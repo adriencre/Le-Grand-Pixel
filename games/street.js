@@ -29,3 +29,10 @@ export function npcTip(hype, rnd = Math.random) {
   if (r < 0.30) return 4 + Math.floor(rnd() * 5);
   return 1 + Math.floor(rnd() * 3);
 }
+
+// The loan shark lends to broke players. Late debts grow 10% per started 5 minutes, capped at 10 steps.
+export const LOAN = { amount: 500, owe: 750, term: 10 * 60000 };
+export function loanDue(loan, now) {
+  const late = Math.min(10, Math.max(0, Math.ceil((now - loan.due) / 300000)));
+  return Math.round(loan.owe * 1.1 ** late);
+}

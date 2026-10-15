@@ -125,6 +125,9 @@ export const NPC_OUTFITS = {
   bouncer: { hair: 'hair_rase', hairColor: 0, skin: 4, top: 'top_smoking', bottom: 'bot_noir', shoes: 'sh_rangers', glasses: 'gl_soleil' },
   dealer: { hair: 'hair_court', hairColor: 0, skin: 1, top: 'top_smoking', bottom: 'bot_noir', shoes: 'sh_vernis', acc: 'acc_noeud' },
   barman: { hair: 'hair_banane', hairColor: 2, skin: 3, top: 'top_costume', bottom: 'bot_noir', shoes: 'sh_vernis', acc: 'acc_noeud' },
+  shark: { hair: 'hair_banane', hairColor: 0, skin: 1, top: 'top_perfecto', bottom: 'bot_noir', shoes: 'sh_vernis', hat: 'hat_fedora', glasses: 'gl_soleil', acc: 'acc_cigare' },
+  concierge: { hair: 'hair_court', hairColor: 3, skin: 2, top: 'top_costume', bottom: 'bot_noir', shoes: 'sh_vernis', glasses: 'gl_rondes', acc: 'acc_noeud', hat: 'hat_cap' },
+  seller: { hair: 'hair_queue', hairColor: 5, skin: 1, top: 'top_mariniere', bottom: 'bot_jean', shoes: 'sh_baskets', acc: 'acc_echarpe' },
   shop: { hair: 'hair_chignon', hairColor: 9, skin: 0, top: 'top_robe', bottom: 'bot_noir', shoes: 'sh_vernis', glasses: 'gl_rondes', acc: 'acc_chaine' },
 };
 export const FEATURED = [

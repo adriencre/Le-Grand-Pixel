@@ -67,3 +67,11 @@ test('private messages: conversation order, unread counts, contacts list', () =>
   assert.equal(db.contacts(b.id).find(x => x.name === 'Ana').unread, 0, 'opening marks as read');
   assert.equal(db.contacts(a.id).length, 1);
 });
+
+test('meta values round-trip, missing ones are undefined', () => {
+  const db = openDb(':memory:');
+  assert.equal(db.getMeta('jackpot'), undefined);
+  db.setMeta('jackpot', 1234);
+  db.setMeta('jackpot', 4321);
+  assert.equal(db.getMeta('jackpot'), 4321);
+});

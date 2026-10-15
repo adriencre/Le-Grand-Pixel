@@ -3,16 +3,19 @@ import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
 import { Server } from 'socket.io';
-import { TABLES, SPAWN, COLORS, T, MW, MH, ST, ST_SPAWN, BUSK, BROKE, ENTRY_MIN, seatPos, standPos, nearBar, nearShop, nearDoorIn, nearDoorOut, nearBusk, nearBin,
+import { TABLES, SPAWN, COLORS, T, MW, MH, ST, ST_SPAWN, BUSK, BROKE, ENTRY_MIN, seatPos, standPos, nearBar, nearShop, nearDoorIn, nearDoorOut, nearBusk, nearBin, nearShark, nearResDoor, RES_DOOR,
+  LW, LH, LOBBY_SPAWN, LOBBY_ELEV, nearLobbyExit, nearElevatorApt, nearConcierge, nearFurnShop,
   VW, VH, VIP_SPAWN, VIP_ELEVATOR, TIERS, upgradeCost, nearElevatorIn, nearElevatorOut, nearReception, nearVipBar } from './public/map.js';
-import { rollLoot, npcTip } from './games/street.js';
+import { rollLoot, npcTip, LOAN, loanDue } from './games/street.js';
+import { ACHIEVEMENTS } from './public/achievements.js';
+import { FURNITURE, WALLS, FLOORS, APT_SIZES, MAX_ITEMS, fits, cleanApt, aptDims, aptDoor } from './public/furniture.js';
 import { STOCKS, step, trade } from './games/stocks.js';
 import { fmtPrice } from './public/market.js';
 import { ITEMS, SLOTS, REMOVABLE, SKINS, HAIR_COLORS, RARITY, defaultOutfit } from './public/items.js';
 import { Blackjack } from './games/blackjack.js';
 import { Poker } from './games/poker.js';
 import { Roulette } from './games/roulette.js';
-import { Slots } from './games/slots.js';
+import { Slots, jackpot } from './games/slots.js';
 import { Race } from './games/race.js';
 import { DRINKS, SOBER_PER_SEC, drunkAmount } from './public/drinks.js';
 import { openDb, checkPassword } from './db.js';
@@ -41,9 +44,12 @@ fs.mkdirSync(path.resolve('data'), { recursive: true });
 const db = openDb(path.resolve('data/casino.db'));
 const imported = db.importJson(path.resolve('data/chips.json'), path.resolve('data/market.json'));
 if (imported) console.log(`  ${imported} joueurs importes depuis l'ancienne sauvegarde.`);
+const savedPot = db.getMeta('jackpot');
+if (Number.isInteger(savedPot) && savedPot > 0) jackpot.pot = savedPot;
 function persist() {
   db.savePlayers([...players.values()]);
   db.saveMarket(market);
+  db.setMeta('jackpot', jackpot.pot);
 }
 setInterval(persist, 3000);
 for (const sig of ['SIGINT', 'SIGTERM']) process.on(sig, () => { persist(); db.close(); process.exit(0); });
@@ -73,6 +79,7 @@ function goZone(p, zone, at) {
   stand(p);
   p.busking = false;
   p.zone = zone;
+  if (!zone.startsWith('apt:')) p.aptName = null;
   const spawn = at || { street: { x: ST_SPAWN.x + (Math.random() * 30 - 15) | 0, y: ST_SPAWN.y }, vip: VIP_SPAWN, casino: SPAWN }[zone];
   Object.assign(p, spawn, { moving: false, dir: zone === 'street' ? 0 : 3 });
   io.to(p.id).emit('pos', { x: p.x, y: p.y, seat: null, zone });
@@ -80,6 +87,7 @@ function goZone(p, zone, at) {
 
 function kickOut(p) {
   p.homeless = true;
+  award(p, 'ruine');
   goZone(p, 'street');
   io.to(p.id).emit('kicked');
   io.emit('say', `💸 ${p.name} est ruiné... le videur le jette dehors !`);
@@ -90,7 +98,7 @@ const binEmptyUntil = [0, 0, 0, 0, 0];
 const binsLeft = () => binEmptyUntil.map(t => Math.max(0, t - Date.now()));
 
 const pub = p => ({ id: p.id, name: p.name, color: p.color, x: p.x, y: p.y, dir: p.dir, moving: p.moving, chips: p.chips, seat: p.seat, outfit: p.outfit, drunk: Math.round(p.drunk * 100) / 100,
-  zone: p.zone, vip: p.vip || 0, phone: !!p.phone, homeless: !!p.homeless, busking: !!p.busking, hype: Math.round((p.hype || 0) * 100) / 100 });
+  zone: p.zone, aptName: p.aptName || null, vip: p.vip || 0, shark: !!p.loan && Date.now() > p.loan.due, phone: !!p.phone, homeless: !!p.homeless, busking: !!p.busking, hype: Math.round((p.hype || 0) * 100) / 100 });
 
 // Bank: last operations and a balance sample every minute, shown in the phone.
 function log(p, text, amount) {
@@ -99,6 +107,44 @@ function log(p, text, amount) {
   sendBank(p);
 }
 function sendBank(p) { io.to(p.id).emit('bank', { history: p.history, curve: p.curve, stocks: p.stocks }); }
+// Achievements: unlocked once, announced to everyone.
+function award(p, id) {
+  if (p.achievements.includes(id)) return;
+  p.achievements.push(id);
+  io.to(p.id).emit('achievements', { list: p.achievements, id });
+  io.emit('say', `🏆 ${p.name} débloque le succès « ${ACHIEVEMENTS[id][0]} » !`);
+}
+jackpot.onWin = (p, amt) => {
+  log(p, 'JACKPOT !', amt);
+  io.emit('say', `🎰💰 JACKPOT ! ${p.name} rafle ${amt.toLocaleString('fr-FR')} jetons aux machines à sous !`);
+  io.emit('jackpot', { pot: jackpot.pot, by: p.name });
+  award(p, 'jackpot');
+};
+// Loan shark: what the player owes now, sent to their HUD.
+const sendLoan = p => io.to(p.id).emit('loan', p.loan && { owe: loanDue(p.loan, Date.now()), left: p.loan.due - Date.now() });
+
+// Apartments: the owner's p.apt when online, otherwise read from the database once (visitors can't edit it).
+const offlineApts = new Map();
+function getApt(ownerId) {
+  const o = [...players.values()].find(x => x.dbId === ownerId);
+  if (o) return { name: o.name, apt: o.apt, owner: o };
+  if (!offlineApts.has(ownerId)) {
+    const acc = db.getPlayerById(ownerId);
+    if (!acc) return null;
+    offlineApts.set(ownerId, { name: acc.name, apt: cleanApt(acc.apt) });
+  }
+  return offlineApts.get(ownerId);
+}
+const inApt = ownerId => [...players.values()].filter(x => x.zone === 'apt:' + ownerId);
+function sendApt(ownerId) {
+  const r = getApt(ownerId);
+  if (!r) return;
+  for (const v of inApt(ownerId)) io.to(v.id).emit('apt', { owner: ownerId, name: r.name, mine: v.dbId === ownerId, ...r.apt });
+  if (r.owner) io.to(r.owner.id).emit('myapt', r.apt); // the showroom shows your own stock and styles
+}
+const ownedKinds = apt => new Set([...apt.items.map(i => i.id), ...Object.keys(apt.stock).filter(id => apt.stock[id] > 0)]).size;
+const LOBBY_BY_ELEVATOR = { x: LOBBY_ELEV.x, y: 4 * T + 2 };
+
 const ring = p => io.emit('ring', { id: p.id, tone: ITEMS[p.outfit.ringtone]?.style || 'basic' });
 
 // Stock exchange: cryptos move every 5 s, stocks every 20 s; prices survive restarts (data/market.json).
@@ -198,6 +244,10 @@ io.on('connection', socket => {
     for (const s of STOCKS) { const h = sv.stocks?.[s.id]; if (Number.isInteger(h?.n) && h.n > 0) p.stocks[s.id] = { n: h.n, cost: Math.max(0, h.cost | 0) }; }
     p.history = Array.isArray(sv.history) ? sv.history.slice(0, 20) : [];
     p.curve = [p.chips];
+    p.apt = cleanApt(sv.apt);
+    offlineApts.delete(sv.id);
+    p.achievements = Array.isArray(sv.achievements) ? sv.achievements.filter(id => ACHIEVEMENTS[id]) : [];
+    p.loan = Number.isInteger(sv.loan?.owe) && Number.isFinite(sv.loan?.due) ? { owe: sv.loan.owe, due: sv.loan.due } : null;
     // Daily reward (common/rare cosmetics the player doesn't own can come out of the day-7 chest).
     const chest = Object.values(ITEMS).filter(it => it.price > 0 && it.rarity <= 1 && !p.owned.includes(it.id)).map(it => it.id);
     const daily = claimDaily(sv.daily, Date.now(), chest);
@@ -212,12 +262,17 @@ io.on('connection', socket => {
     socket.emit('top', top());
     sendMe();
     socket.emit('msg:list', db.contacts(p.dbId));
+    socket.emit('achievements', { list: p.achievements });
+    socket.emit('myapt', p.apt);
+    socket.emit('jackpot', { pot: jackpot.pot });
+    sendLoan(p);
     if (daily) {
       const r = daily.reward;
       p.chips += r.chips;
       if (r.item) { p.owned.push(r.item); sendMe(); }
       log(p, `Bonus du jour ${r.day}/7`, r.chips);
       socket.emit('daily', { ...r, streak: daily.daily.streak });
+      if (r.day === 7) award(p, 'serie7');
     }
   }
 
@@ -233,6 +288,7 @@ io.on('connection', socket => {
     socket.emit('vipCard', tier);
     log(p, TIERS[tier].name, -cost);
     io.emit('say', `💳 ${p.name} devient membre ${TIERS[tier].name} !`);
+    if (tier === 3) award(p, 'diamant');
   });
 
   socket.on('shop', m => {
@@ -246,6 +302,7 @@ io.on('connection', socket => {
       socket.emit('bought', it.id);
       log(p, 'Boutique : ' + it.name, -it.price);
       if (it.rarity >= 2) io.emit('say', `✨ ${p.name} s'offre ${it.name} (${RARITY[it.rarity].name.toLowerCase()}) !`);
+      if (p.owned.length >= 20) award(p, 'fashion');
     } else if (m.a === 'equip') {
       if (!has(p, m.id)) return;
       p.outfit[it.slot] = it.id;
@@ -264,7 +321,8 @@ io.on('connection', socket => {
 
   socket.on('move', m => {
     if (!p || p.seat || p.busking || !m || !Number.isFinite(m.x) || !Number.isFinite(m.y)) return;
-    const [w, h] = p.zone === 'street' ? [ST.w, ST.h] : p.zone === 'vip' ? [VW, VH] : [MW, MH];
+    const big = APT_SIZES.at(-1);
+    const [w, h] = p.zone === 'street' ? [ST.w, ST.h] : p.zone === 'vip' ? [VW, VH] : p.zone === 'lobby' ? [LW, LH] : p.zone.startsWith('apt:') ? [big.w, big.h] : [MW, MH];
     p.x = Math.max(0, Math.min(w * T, m.x));
     p.y = Math.max(0, Math.min(h * T, m.y));
     p.dir = [0, 1, 2, 3].includes(m.dir) ? m.dir : 0;
@@ -308,6 +366,7 @@ io.on('connection', socket => {
     p.chips -= price;
     if (price) log(p, 'Bar : ' + d.name, -price);
     p.drunk = Math.max(0, Math.min(1, p.drunk + d.strength));
+    if (p.drunk >= 1) award(p, 'ivre');
     socket.emit('drank', d.id);
   });
 
@@ -319,9 +378,12 @@ io.on('connection', socket => {
       return goZone(p, 'vip');
     }
     if (p.zone === 'vip' && nearElevatorOut(p)) return goZone(p, 'casino', { x: VIP_ELEVATOR.x, y: VIP_ELEVATOR.y + 22 });
+    if (p.zone === 'street' && nearResDoor(p) && !p.busking) return goZone(p, 'lobby', LOBBY_SPAWN);
+    if (p.zone === 'lobby' && nearLobbyExit(p)) return goZone(p, 'street', { x: RES_DOOR.x, y: RES_DOOR.y + 8 });
     if (p.zone !== 'street' || !nearDoorOut(p)) return;
+    if (p.loan && Date.now() > p.loan.due) return socket.emit('shark', `Tu vas ou ? Tu me dois ${loanDue(p.loan, Date.now())} !`);
     if (p.homeless && p.chips < ENTRY_MIN) return socket.emit('bouncer', `Pas de jetons, pas d'entree ! Reviens avec ${ENTRY_MIN}.`);
-    if (p.homeless) { p.homeless = false; io.emit('say', `🎉 ${p.name} a remonté la pente et revient au casino !`); }
+    if (p.homeless) { p.homeless = false; io.emit('say', `🎉 ${p.name} a remonté la pente et revient au casino !`); award(p, 'remontee'); }
     goZone(p, 'casino');
   });
 
@@ -350,6 +412,26 @@ io.on('connection', socket => {
     p.chips -= 10; b.chips += 10;
     log(p, 'Pourboire a ' + b.name, -10); log(b, 'Pourboire de ' + p.name, 10);
     io.emit('tip', { to: b.id, amt: 10, from: p.id, by: p.name });
+    award(b, 'musicien');
+  });
+
+  // Loan shark: lends to broke players, takes the money back (with interest) when they talk to him again.
+  socket.on('shark', () => {
+    if (!p || p.zone !== 'street' || p.busking || !nearShark(p)) return;
+    const say = t => socket.emit('shark', t);
+    if (!p.loan) {
+      if (p.chips >= ENTRY_MIN) return say('Reviens quand t\'auras plus un rond.');
+      p.chips += LOAN.amount;
+      p.loan = { owe: LOAN.owe, due: Date.now() + LOAN.term };
+      log(p, 'Pret du Requin', LOAN.amount);
+      sendLoan(p);
+      return say(`Voila ${LOAN.amount}. Tu me rends ${LOAN.owe} dans 10 minutes. Sinon...`);
+    }
+    const owe = loanDue(p.loan, Date.now());
+    if (p.chips < owe) return say(`Tu me dois ${owe}. Reviens avec l'argent.`);
+    repay(p, owe);
+    award(p, 'usurier');
+    say('Un plaisir de faire affaire.');
   });
 
   socket.on('search', i => {
@@ -363,7 +445,7 @@ io.on('connection', socket => {
       const loot = rollLoot(p.owned);
       p.chips += loot.chips;
       if (loot.chips) log(p, 'Trouve dans une poubelle', loot.chips);
-      if (loot.item) { p.owned.push(loot.item); sendMe(); io.emit('say', `🗑️ ${p.name} a trouvé ${ITEMS[loot.item].name} dans une poubelle !`); }
+      if (loot.item) { p.owned.push(loot.item); sendMe(); award(p, 'trouvaille'); io.emit('say', `🗑️ ${p.name} a trouvé ${ITEMS[loot.item].name} dans une poubelle !`); }
       socket.emit('loot', loot);
       io.emit('bins', binsLeft());
     }, 2000);
@@ -382,6 +464,7 @@ io.on('connection', socket => {
     log(p, 'Virement a ' + b.name, -amt);
     log(b, 'Virement de ' + p.name, amt);
     io.to(b.id).emit('bankMsg', `${p.name} t'a envoye ${amt.toLocaleString('fr-FR')} jetons !`);
+    if (amt >= 1000) award(p, 'genereux');
     ring(b);
   });
 
@@ -391,6 +474,102 @@ io.on('connection', socket => {
     const delta = trade(p, s.id, m.qty, market.prices[s.id]);
     if (delta === null) return;
     log(p, `Bourse : ${m.qty > 0 ? 'achat' : 'vente'} ${Math.abs(m.qty)} ${s.name}`, delta);
+  });
+
+  // ---------- apartments ----------
+  const aptOwner = () => (p?.zone.startsWith('apt:') ? +p.zone.slice(4) : null);
+  socket.on('apt:list', () => {
+    if (!p || p.zone !== 'lobby' || !nearElevatorApt(p)) return;
+    const list = [{ id: p.dbId, name: p.name, mine: true, online: true }];
+    for (const o of players.values()) if (o !== p && o.apt.open) list.push({ id: o.dbId, name: o.name, online: true });
+    for (const r of db.openApts(40)) if (!list.some(l => l.id === r.id)) list.push({ id: r.id, name: r.name, online: false });
+    socket.emit('apt:list', list.slice(0, 30));
+  });
+  socket.on('apt:enter', id => {
+    const r = p && Number.isInteger(id) && getApt(id);
+    if (!r || p.zone !== 'lobby' || !nearElevatorApt(p)) return;
+    if (!r.apt.open && id !== p.dbId) return socket.emit('say', `🔒 L'appart de ${r.name} est ferme.`);
+    goZone(p, 'apt:' + id, aptDoor(r.apt));
+    p.aptName = r.name;
+    sendApt(id);
+  });
+  socket.on('apt:leave', () => {
+    if (aptOwner() === null) return;
+    goZone(p, 'lobby', LOBBY_BY_ELEVATOR);
+  });
+  socket.on('concierge', () => {
+    if (!p || p.zone !== 'lobby' || !nearConcierge(p)) return;
+    const home = [...players.values()].filter(o => o.zone.startsWith('apt:'));
+    const open = [...players.values()].filter(o => o.apt.open).length;
+    socket.emit('concierge', home.length ? `Bonjour ! En ce moment : ${home.slice(0, 3).map(o => `${o.name} chez ${o.aptName}`).join(', ')}.` : open > 1 ? `Bonjour ! ${open} appartements sont ouverts aux visites, prenez l'ascenseur.` : 'Bonjour ! L\'ascenseur est au fond, le showroom de meubles a droite.');
+  });
+  // Showroom: furniture goes to the stock, walls and floors to the owned styles.
+  socket.on('furn:buy', id => {
+    if (!p || p.zone !== 'lobby' || !nearFurnShop(p) || p.homeless || typeof id !== 'string') return;
+    const d = FURNITURE[id], st = WALLS[id] || FLOORS[id];
+    if (d) {
+      if (p.chips < d.price) return;
+      p.chips -= d.price;
+      p.apt.stock[id] = Math.min(99, (p.apt.stock[id] || 0) + 1);
+      log(p, 'Meuble : ' + d.name, -d.price);
+      if (ownedKinds(p.apt) >= 30) award(p, 'collection');
+    } else if (st && st.price > 0 && !p.apt.styles.includes(id)) {
+      if (p.chips < st.price) return;
+      p.chips -= st.price;
+      p.apt.styles.push(id);
+      log(p, 'Deco : ' + st.name, -st.price);
+    } else return;
+    socket.emit('furn:bought', id);
+    sendApt(p.dbId);
+  });
+  socket.on('apt:use', i => {
+    const id = aptOwner(), r = id !== null && getApt(id), it = r && r.apt.items[i];
+    const d = it && FURNITURE[it.id];
+    if (!d?.use || Math.hypot((it.x + d.w / 2) * T - p.x, (it.y + d.h) * T - p.y) > 2 * T + d.w * 8) return;
+    if (d.use === 'sleep') { p.drunk = 0; socket.emit('slept'); }
+    else if (d.use === 'fridge') { p.drunk = Math.max(0, p.drunk - 0.3); socket.emit('say', '🥤 Un soda bien frais.'); }
+    else if (d.use === 'tv') { it.on = !it.on; sendApt(id); }
+    else if (d.use === 'music') { r.apt.music = 1 - r.apt.music; sendApt(id); }
+  });
+  // Decorating: only the owner, in their own apartment. Homeless players can rearrange but not buy.
+  socket.on('apt:edit', m => {
+    if (!p || !m || typeof m !== 'object' || aptOwner() !== p.dbId) return;
+    const apt = p.apt, pay = (price, what) => {
+      if (price > 0 && (p.homeless || p.chips < price)) return false;
+      if (price > 0) { p.chips -= price; log(p, what, -price); }
+      return true;
+    };
+    const d = FURNITURE[m.id];
+    if (m.a === 'place') {
+      if (!d || apt.items.length >= MAX_ITEMS || !fits(apt, m.id, m.x, m.y)) return;
+      if (apt.stock[m.id] > 0) apt.stock[m.id]--;
+      else if (!pay(d.price, 'Meuble : ' + d.name)) return;
+      apt.items.push({ id: m.id, x: m.x, y: m.y, f: !!m.f && !d.noflip, on: false });
+      if (apt.items.length >= 15) award(p, 'deco');
+      if (ownedKinds(apt) >= 30) award(p, 'collection');
+    } else if (m.a === 'move') {
+      const it = apt.items[m.i];
+      if (!it || !fits(apt, it.id, m.x, m.y, m.i)) return;
+      Object.assign(it, { x: m.x, y: m.y, f: !!m.f && !FURNITURE[it.id].noflip });
+    } else if (m.a === 'take') {
+      const [it] = Number.isInteger(m.i) ? apt.items.splice(m.i, 1) : [];
+      if (!it) return;
+      apt.stock[it.id] = Math.min(99, (apt.stock[it.id] || 0) + 1);
+    } else if (m.a === 'style') {
+      const st = WALLS[m.id] || FLOORS[m.id];
+      if (!st) return;
+      if (st.price > 0 && !apt.styles.includes(m.id)) { if (!pay(st.price, 'Deco : ' + st.name)) return; apt.styles.push(m.id); }
+      apt[WALLS[m.id] ? 'wall' : 'floor'] = m.id;
+    } else if (m.a === 'size') {
+      const sz = APT_SIZES[apt.size + 1];
+      if (!sz || !pay(sz.price, 'Appart : ' + sz.name)) return;
+      p.apt = cleanApt({ ...apt, size: apt.size + 1 });
+      if (p.apt.size === 2) award(p, 'penthouse');
+    } else if (m.a === 'open') {
+      apt.open = !!m.v;
+      if (!apt.open) for (const v of inApt(p.dbId)) if (v !== p) { goZone(v, 'lobby', LOBBY_BY_ELEVATOR); io.to(v.id).emit('say', `🔒 ${p.name} a ferme son appart.`); }
+    } else return;
+    sendApt(p.dbId);
   });
 
   // ---------- private messages ----------
@@ -428,13 +607,26 @@ io.on('connection', socket => {
   });
 });
 
+function repay(p, owe) {
+  p.chips -= owe;
+  p.loan = null;
+  log(p, 'Remboursement Requin', -owe);
+  sendLoan(p);
+}
+
 setInterval(() => io.emit('players', [...players.values()].map(pub)), 66);
 setInterval(() => {
   const now = Date.now();
   for (const p of players.values()) {
     p.drunk = Math.max(0, p.drunk - SOBER_PER_SEC);
+    if (p.chips >= 1e6) award(p, 'million');
+    if (p.loan && now > p.loan.due) { // late: he grabs the money as soon as there is enough, wherever you are
+      const owe = loanDue(p.loan, now);
+      if (p.chips >= owe) { repay(p, owe); io.to(p.id).emit('bankMsg', `Le Requin t'a retrouve et a pris ses ${owe} jetons.`); }
+      else sendLoan(p);
+    }
     // Broke in the casino: a short grace (longer if a bet is still running at a table), then the bouncer.
-    if (p.zone !== 'street' && p.chips < BROKE) {
+    if ((p.zone === 'casino' || p.zone === 'vip') && p.chips < BROKE) { // your apartment is a shelter
       p.brokeSince ||= now;
       if (now - p.brokeSince > (p.seat ? 20000 : 2500)) { p.brokeSince = 0; kickOut(p); }
     } else p.brokeSince = 0;
@@ -451,7 +643,7 @@ function top() { // saved ranking + live chips of online players
   for (const p of players.values()) all.set(p.name.toLowerCase(), { name: p.name, chips: p.chips });
   return [...all.values()].sort((a, b) => b.chips - a.chips).slice(0, 5);
 }
-setInterval(() => io.emit('top', top()), 2000);
+setInterval(() => { io.emit('top', top()); io.emit('jackpot', { pot: jackpot.pot }); }, 2000);
 setInterval(() => { for (const p of players.values()) { p.curve.push(p.chips); if (p.curve.length > 60) p.curve.shift(); sendBank(p); } }, 60000);
 
 server.listen(PORT, () => {
