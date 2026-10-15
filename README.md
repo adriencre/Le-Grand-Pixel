@@ -7,6 +7,7 @@ Un casino en pixel art où l'on se balade, s'assoit aux tables et joue entre pot
 - **Étage VIP** : cartes Or, Platine, Diamant à la réception, ascenseur doré, salle VIP, mezzanine Platine et salon Diamant aux mises énormes
 - **La rue** : ruiné, le videur te jette dehors. Fais la manche à la guitare (jeu de rythme), fouille les poubelles, et reviens avec 100 jetons
 - **Le bar** : boissons, ivresse, écran qui tangue et mises aléatoires
+- **Téléphone (P)** : banque et virements entre potes, plan de qui est où, appareil photo avec filtres et galerie, bourse d'actions fictives ; modèles, fonds et sonneries en boutique
 - **Social** : chat en bulles, emotes (touches 1-5), classement néon des plus riches
 - **Ambiance** : sons 8-bit et musique lounge générés en code (touche M)
 
@@ -25,7 +26,7 @@ Les jetons et garde-robes sont sauvegardés dans `data/chips.json`.
 
 ## Contrôles
 
-ZQSD / flèches : bouger · E : s'asseoir / boutique · Échap : se lever · Entrée : chat · 1-5 : emotes · M : musique
+ZQSD / flèches : bouger · E : interagir · Échap : se lever · Entrée : chat · 1-5 : emotes · M : musique · P : téléphone
 
 ## Tests
 

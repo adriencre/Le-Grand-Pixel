@@ -3,12 +3,14 @@ import { ITEMS, BY_SLOT, RARITY, REMOVABLE, SKINS, HAIR_COLORS } from './items.j
 import { COLORS } from './map.js';
 import { drawAvatar } from './avatar.js';
 import { canvas, text, textW, grid, chipSprite } from './sprites.js';
+import { drawPhoneMini } from './phone.js';
+import { sfx } from './sfx.js';
 
 const SW = 480, SH = 270;
 export const TABS = [
   { slot: 'hat', name: 'CHAPEAUX' }, { slot: 'hair', name: 'COIFFURES' }, { slot: 'glasses', name: 'LUNETTES' },
   { slot: 'top', name: 'HAUTS' }, { slot: 'bottom', name: 'BAS' }, { slot: 'shoes', name: 'CHAUSSURES' },
-  { slot: 'acc', name: 'ACCESSOIRES' }, { slot: 'fx', name: 'EFFETS' }, { slot: 'style', name: 'STYLE' }, { slot: 'wardrobe', name: 'MES TENUES' },
+  { slot: 'acc', name: 'ACCESSOIRES' }, { slot: 'fx', name: 'EFFETS' }, { slot: 'phone', slots: ['phone', 'wallpaper', 'ringtone'], name: 'TELEPHONE' }, { slot: 'style', name: 'STYLE' }, { slot: 'wardrobe', name: 'MES TENUES' },
 ];
 const ICONS = [
   ['...aaa...', '...aaa...', '...aaa...', '...bbb...', '.aaaaaaa.'],
@@ -19,6 +21,7 @@ const ICONS = [
   ['.........', '..aa.....', '..aaaa...', '..aaaaaa.', '..bbbbbb.'],
   ['.a.....a.', '..a...a..', '...a.a...', '....b....', '...bbb...'],
   ['....a....', '...aaa...', 'aaaaaaaaa', '..aa.aa..', '.a.....a.'],
+  ['...aaa...', '...aca...', '...aca...', '...aaa...', '...aba...'],
   ['..aaaa...', '.abaacaa.', '.aaaaaaa.', '.adaaa...', '..aaa....'],
   ['aaaaaaaaa', 'a...a...a', 'a.b.a.b.a', 'a...a...a', 'aaaaaaaaa'],
 ].map(r => grid(r, { a: '#f0e0ff', b: '#ffc030', c: '#4aa8ff', d: '#ff4ab0' }));
@@ -27,7 +30,7 @@ export const shop = { open: false, tab: 3, sel: null, rot: 0, manual: 0, hover: 
 const DIRS = [0, 2, 3, 1];
 
 // ---------- layout ----------
-const tabRect = i => [186 + i * 29, 6, 27, 22];
+const tabRect = i => [186 + Math.floor(i * 290 / TABS.length), 6, Math.floor(290 / TABS.length) - 2, 22];
 const cardRect = k => [186 + (k % 5) * 58, 50 + Math.floor(k / 5) * 92, 54, 88];
 const ARROWS = [[24, 214, 16, 14], [150, 214, 16, 14]];
 const swatchRect = (row, k) => [190 + k * 23, 62 + row * 56, 20, 20];
@@ -36,7 +39,7 @@ const presetBtn = (k, b) => [196 + k * 94, 192 + b * 17, 80, 14];
 const inR = ([x, y, w, h], mx, my) => mx >= x && mx < x + w && my >= y && my < y + h;
 
 const tab = () => TABS[shop.tab].slot;
-const items = () => BY_SLOT[tab()] || [];
+const items = () => (TABS[shop.tab].slots || [tab()]).flatMap(s => BY_SLOT[s] || []);
 const owns = (me, it) => it.price === 0 || me.owned.has(it.id);
 export const preview = me => {
   const it = ITEMS[shop.sel];
@@ -81,7 +84,11 @@ function card(x, me, it, k, now) {
   } else if (it.rarity === 2) { x.fillStyle = `rgba(176,96,255,${0.06 + 0.05 * Math.sin(now / 250 + k)})`; x.fillRect(cx, y0, cw, chh); }
   const dir = hov ? DIRS[Math.floor(now / 500) % 4] : it.slot === 'acc' && it.style === 'wings' ? 3 : 0;
   x.save(); x.beginPath(); x.rect(cx, y0, cw, chh); x.clip();
-  avatarAt(x, { ...me.outfit, [it.slot]: it.id }, me.color, dir, now, cx + cw / 2, y0 + 58, 2);
+  if (['phone', 'wallpaper', 'ringtone'].includes(it.slot)) { // phone items show the phone, not the avatar
+    x.save(); x.translate(cx + cw / 2, y0 + 32); x.scale(2, 2);
+    drawPhoneMini(x, { ...me.outfit, [it.slot]: it.id }, 0, 0, now);
+    x.restore();
+  } else avatarAt(x, { ...me.outfit, [it.slot]: it.id }, me.color, dir, now, cx + cw / 2, y0 + 58, 2);
   x.restore();
   const words = it.name.split(' '), lines = [''];
   for (const wd of words) { if ((lines.at(-1) + ' ' + wd).trim().length > 13) lines.push(wd); else lines[lines.length - 1] = (lines.at(-1) + ' ' + wd).trim(); }
@@ -143,7 +150,7 @@ export function drawShop(x, w, h, now, me) {
     const [tx, ty, tw, th] = tabRect(i), on = i === shop.tab;
     x.fillStyle = on ? '#c8a040' : '#2a1838'; x.fillRect(tx, ty, tw, th);
     x.fillStyle = on ? '#4a2a10' : '#1a0e24'; x.fillRect(tx + 1, ty + 1, tw - 2, th - 2);
-    x.drawImage(ICONS[i], tx + 9, ty + 8);
+    x.drawImage(ICONS[i], tx + Math.floor((tw - 9) / 2), ty + 8);
   });
   const t = TABS[shop.tab];
   const list = items();
@@ -226,6 +233,7 @@ export function shopClick(mx, my, me, now) {
     const it = list[k];
     if (shop.sel === it.id && owns(me, it) && me.outfit[it.slot] !== it.id) return { a: 'equip', id: it.id }; // double click wears it
     shop.sel = it.id;
+    if (it.slot === 'ringtone') sfx.ring(it.style); // listen before buying
     return null;
   }
   return null;

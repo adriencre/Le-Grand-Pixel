@@ -6,6 +6,7 @@ import { Server } from 'socket.io';
 import { TABLES, SPAWN, COLORS, T, MW, MH, ST, ST_SPAWN, BUSK, BROKE, ENTRY_MIN, seatPos, standPos, nearBar, nearShop, nearDoorIn, nearDoorOut, nearBusk, nearBin,
   VW, VH, VIP_SPAWN, VIP_ELEVATOR, TIERS, upgradeCost, nearElevatorIn, nearElevatorOut, nearReception, nearVipBar } from './public/map.js';
 import { rollLoot, npcTip } from './games/street.js';
+import { STOCKS, step, trade } from './games/stocks.js';
 import { ITEMS, SLOTS, REMOVABLE, SKINS, HAIR_COLORS, RARITY, defaultOutfit } from './public/items.js';
 import { Blackjack } from './games/blackjack.js';
 import { Poker } from './games/poker.js';
@@ -39,7 +40,7 @@ let saved = {};
 try { saved = JSON.parse(fs.readFileSync(SAVE, 'utf8')); } catch (e) { if (e.code !== 'ENOENT') console.error('chips.json illisible, on repart de zéro :', e.message); }
 let lastSaved = JSON.stringify(saved);
 function persist() {
-  for (const p of players.values()) saved[p.name.toLowerCase()] = { name: p.name, chips: p.chips, color: p.color, vip: p.vip, owned: p.owned, outfit: p.outfit, presets: p.presets };
+  for (const p of players.values()) saved[p.name.toLowerCase()] = { name: p.name, chips: p.chips, color: p.color, vip: p.vip, stocks: p.stocks, history: p.history, owned: p.owned, outfit: p.outfit, presets: p.presets };
   const json = JSON.stringify(saved);
   if (json === lastSaved) return;
   fs.mkdirSync(path.dirname(SAVE), { recursive: true });
@@ -92,7 +93,34 @@ const binEmptyUntil = [0, 0, 0, 0, 0];
 const binsLeft = () => binEmptyUntil.map(t => Math.max(0, t - Date.now()));
 
 const pub = p => ({ id: p.id, name: p.name, color: p.color, x: p.x, y: p.y, dir: p.dir, moving: p.moving, chips: p.chips, seat: p.seat, outfit: p.outfit, drunk: Math.round(p.drunk * 100) / 100,
-  zone: p.zone, vip: p.vip || 0, homeless: !!p.homeless, busking: !!p.busking, hype: Math.round((p.hype || 0) * 100) / 100 });
+  zone: p.zone, vip: p.vip || 0, phone: !!p.phone, homeless: !!p.homeless, busking: !!p.busking, hype: Math.round((p.hype || 0) * 100) / 100 });
+
+// Bank: last operations and a balance sample every minute, shown in the phone.
+function log(p, text, amount) {
+  p.history.unshift({ text, amount, at: Date.now() });
+  p.history.length = Math.min(p.history.length, 20);
+  sendBank(p);
+}
+function sendBank(p) { io.to(p.id).emit('bank', { history: p.history, curve: p.curve, stocks: p.stocks }); }
+const ring = p => io.emit('ring', { id: p.id, tone: ITEMS[p.outfit.ringtone]?.style || 'basic' });
+
+// Stock exchange (prices reset when the server restarts).
+// shortcut: prices are not saved; persist them if players start timing restarts.
+const market = { prices: Object.fromEntries(STOCKS.map(s => [s.id, s.base])), hist: Object.fromEntries(STOCKS.map(s => [s.id, [s.base]])) };
+setInterval(() => {
+  for (const s of STOCKS) {
+    const [price, event] = step(market.prices[s.id], s);
+    const old = market.prices[s.id];
+    market.prices[s.id] = price;
+    market.hist[s.id].push(price);
+    if (market.hist[s.id].length > 40) market.hist[s.id].shift();
+    if (event) {
+      io.emit('say', event === 'krach' ? `📉 KRACH ! ${s.name} s'effondre (${old} -> ${price})` : `📈 ENVOLEE ! ${s.name} explose (${old} -> ${price})`);
+      for (const p of players.values()) if (p.stocks[s.id]) ring(p);
+    }
+  }
+  io.emit('market', market);
+}, 20000);
 
 const has = (p, id) => ITEMS[id] && (ITEMS[id].price === 0 || p.owned.includes(id));
 // Keeps only items the player is allowed to wear, in the right slot.
@@ -118,9 +146,15 @@ io.on('connection', socket => {
     p.owned = Array.isArray(sv.owned) ? sv.owned.filter(id => ITEMS[id]) : [];
     p.outfit = cleanOutfit(p, sv.outfit);
     p.presets = [0, 1, 2].map(k => (sv.presets?.[k] ? cleanOutfit(p, sv.presets[k]) : null));
+    p.stocks = {};
+    for (const s of STOCKS) { const h = sv.stocks?.[s.id]; if (Number.isInteger(h?.n) && h.n > 0) p.stocks[s.id] = { n: h.n, cost: Math.max(0, h.cost | 0) }; }
+    p.history = Array.isArray(sv.history) ? sv.history.slice(0, 20) : [];
+    p.curve = [p.chips];
     players.set(p.id, p);
     socket.emit('welcome', { id: p.id, x: p.x, y: p.y, zone: p.zone });
     socket.emit('bins', binsLeft());
+    socket.emit('market', market);
+    sendBank(p);
     socket.emit('race', games.race.view(null));
     socket.emit('top', top());
     sendMe();
@@ -136,6 +170,7 @@ io.on('connection', socket => {
     p.vip = tier;
     sendMe();
     socket.emit('vipCard', tier);
+    log(p, TIERS[tier].name, -cost);
     io.emit('say', `💳 ${p.name} devient membre ${TIERS[tier].name} !`);
   });
 
@@ -148,6 +183,7 @@ io.on('connection', socket => {
       p.owned.push(it.id);
       p.outfit[it.slot] = it.id;
       socket.emit('bought', it.id);
+      log(p, 'Boutique : ' + it.name, -it.price);
       if (it.rarity >= 2) io.emit('say', `✨ ${p.name} s'offre ${it.name} (${RARITY[it.rarity].name.toLowerCase()}) !`);
     } else if (m.a === 'equip') {
       if (!has(p, m.id)) return;
@@ -209,6 +245,7 @@ io.on('connection', socket => {
     const price = vipBar && d.id === 'champagne' ? 0 : d.price; // champagne is on the house upstairs
     if (p.chips < price) return;
     p.chips -= price;
+    if (price) log(p, 'Bar : ' + d.name, -price);
     p.drunk = Math.max(0, Math.min(1, p.drunk + d.strength));
     socket.emit('drank', d.id);
   });
@@ -250,6 +287,7 @@ io.on('connection', socket => {
     const b = players.get(to);
     if (!p || !b || b === p || !b.busking || p.zone !== 'street' || p.chips < 10 || Math.hypot(b.x - p.x, b.y - p.y) > 40) return;
     p.chips -= 10; b.chips += 10;
+    log(p, 'Pourboire a ' + b.name, -10); log(b, 'Pourboire de ' + p.name, 10);
     io.emit('tip', { to: b.id, amt: 10, from: p.id, by: p.name });
   });
 
@@ -263,6 +301,7 @@ io.on('connection', socket => {
       binEmptyUntil[i] = Date.now() + 45000;
       const loot = rollLoot(p.owned);
       p.chips += loot.chips;
+      if (loot.chips) log(p, 'Trouve dans une poubelle', loot.chips);
       if (loot.item) { p.owned.push(loot.item); sendMe(); io.emit('say', `🗑️ ${p.name} a trouvé ${ITEMS[loot.item].name} dans une poubelle !`); }
       socket.emit('loot', loot);
       io.emit('bins', binsLeft());
@@ -279,8 +318,29 @@ io.on('connection', socket => {
   socket.on('klm', () => {
     if (!p) return;
     p.chips += 1000000;
+    log(p, 'Code secret', 1000000);
     socket.emit('say', '💰 Code secret : +1 000 000 jetons !');
   });
+
+  socket.on('bank:send', m => {
+    const b = players.get(m?.to), amt = m?.amount;
+    if (!p || !b || b === p || !Number.isInteger(amt) || amt <= 0 || amt > p.chips) return;
+    p.chips -= amt; b.chips += amt;
+    log(p, 'Virement a ' + b.name, -amt);
+    log(b, 'Virement de ' + p.name, amt);
+    io.to(b.id).emit('bankMsg', `${p.name} t'a envoye ${amt.toLocaleString('fr-FR')} jetons !`);
+    ring(b);
+  });
+
+  socket.on('stock', m => {
+    const s = STOCKS.find(x => x.id === m?.id);
+    if (!p || !s || p.homeless) return;
+    const delta = trade(p, s.id, m.qty, market.prices[s.id]);
+    if (delta === null) return;
+    log(p, `Bourse : ${m.qty > 0 ? 'achat' : 'vente'} ${Math.abs(m.qty)} ${s.name}`, delta);
+  });
+
+  socket.on('phone', open => { if (p) p.phone = !!open; });
 
   let lastEmote = 0;
   socket.on('emote', k => {
@@ -321,6 +381,7 @@ function top() {
   return Object.values(all).sort((a, b) => b.chips - a.chips).slice(0, 5);
 }
 setInterval(() => io.emit('top', top()), 2000);
+setInterval(() => { for (const p of players.values()) { p.curve.push(p.chips); if (p.curve.length > 60) p.curve.shift(); sendBank(p); } }, 60000);
 
 server.listen(PORT, () => {
   const ips = Object.values(os.networkInterfaces()).flat().filter(i => i?.family === 'IPv4' && !i.internal).map(i => i.address);

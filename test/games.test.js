@@ -137,3 +137,17 @@ test('VIP tables enforce their limits and cards upgrade for the difference', asy
   assert.equal(upgradeCost(1, 3), 1900000);
   assert.ok(VIP_TABLES.every(t => t.tier >= 1 && t.zone === 'vip'));
 });
+
+test('stock exchange: fees, no short selling, no credit, prices stay positive', async () => {
+  const { trade, step, STOCKS, FEE } = await import('../games/stocks.js');
+  const p = { chips: 10000, stocks: {} };
+  assert.equal(trade(p, 'pizza', 10, 100), -Math.ceil(1000 * (1 + FEE)));
+  assert.equal(p.chips, 10000 - 1010);
+  assert.equal(trade(p, 'pizza', -11, 100), null, 'cannot sell more than owned');
+  assert.equal(trade(p, 'pizza', 1000, 100), null, 'cannot buy without the chips');
+  assert.equal(trade(p, 'pizza', -10, 120), Math.floor(1200 * (1 - FEE)));
+  assert.deepEqual(p.stocks, {});
+  assert.equal(trade(p, 'pizza', 1.5, 100), null);
+  let price = 2;
+  for (let k = 0; k < 5000; k++) { price = step(price, STOCKS[4])[0]; assert.ok(price >= 1 && Number.isInteger(price)); }
+});

@@ -1,5 +1,6 @@
 import { T, MW, MH, ST, VW, VH, TIERS, VIP_BOUNCER, ENTRY_MIN, COLORS, SPAWN, TABLES } from './map.js';
 import { drawVip } from './viproom.js';
+import { phone, openPhone, notify, drawPhone, phoneClick, insidePhone, phoneScroll, phoneBar, phoneBarClick } from './phone.js';
 import { rec, drawReception, recHover, recClick, recBar } from './reception.js';
 import { drawStreet, nearbyStreet, streetState, tipFx, floatAt } from './street.js';
 import { busk, startBusk, stopBusk, updateBusk, hitBusk, drawBusk } from './busk.js';
@@ -37,7 +38,8 @@ resize();
 
 // ---------- state ----------
 let meId = null, me = { x: SPAWN.x, y: SPAWN.y, dir: 3, moving: false, chips: 0, drunk: 0, zone: 'casino', homeless: false, hype: 0, vip: 0, name: '' }, seated = null;
-let elevatorAt = -1e9, casinoSay = null;
+let elevatorAt = -1e9, casinoSay = null, market = null, bankState = {};
+const [sceneCopy, sceneX] = canvas(SW, SH); // last world frame without HUD/phone, for photos
 let kickedAt = -1e9;
 let players = [];
 const disp = new Map(), bubbles = new Map();
@@ -78,12 +80,13 @@ socket.on('players', list => {
   for (const p of list) {
     const d = disp.get(p.id);
     if (!d || Math.hypot(d.x - p.x, d.y - p.y) > 64) disp.set(p.id, { x: p.x, y: p.y });
-    if (p.id === meId) Object.assign(me, { chips: p.chips, drunk: p.drunk || 0, homeless: p.homeless, hype: p.hype || 0, vip: p.vip || 0, name: p.name });
+    if (p.id === meId) Object.assign(me, { chips: p.chips, drunk: p.drunk || 0, homeless: p.homeless, hype: p.hype || 0, vip: p.vip || 0, name: p.name, color: p.color });
     outfits.set(p.id, p.outfit);
   }
 });
 socket.on('pos', m => {
   me.x = m.x; me.y = m.y; seated = m.seat;
+  if (seated && phone.open) togglePhone();
   if (m.zone) setZone(m.zone);
   if (!seated) { table = null; ui.tid = null; bar.style.display = 'none'; document.body.classList.remove('seated'); }
 });
@@ -132,6 +135,14 @@ socket.on('loot', l => {
 });
 socket.on('binshake', m => { streetState.bins[m.i].shakeUntil = performance.now() + 2000; if (m.id === meId) sfx.rummage(); });
 socket.on('bins', left => left.forEach((ms, i) => { streetState.bins[i].until = performance.now() + ms; }));
+socket.on('market', m => { market = m; });
+socket.on('bank', b => { bankState = b; });
+socket.on('bankMsg', t => { notify(t, performance.now()); sys('📱 ' + t); });
+socket.on('ring', m => {
+  if (m.id === meId) return sfx.ring(m.tone);
+  const p = players.find(q => q.id === m.id); // nearby players hear it too
+  if (p && (p.zone || 'casino') === me.zone && Math.hypot(p.x - me.x, p.y - me.y) < 160) sfx.ring(m.tone, 0.3);
+});
 socket.on('disconnect', () => sys('Connexion perdue… recharge la page quand le serveur est relancé.'));
 
 const esc = s => String(s).replace(/[&<>"']/g, c => `&#${c.charCodeAt(0)};`);
@@ -170,6 +181,7 @@ bar.addEventListener('click', e => {
   else if ('stand' in d) socket.emit('stand');
   else if (d.shop) socket.emit('shop', JSON.parse(d.shop));
   else if (d.vip) socket.emit('vip', +d.vip);
+  else if (d.ph) { const act = phoneBarClick(JSON.parse(d.ph)); if (act) socket.emit(...act); }
   else if ('close' in d) closeShop();
   b.blur();
 });
@@ -185,12 +197,20 @@ function setZone(z) {
 const emitNote = q => socket.emit('busk', { a: 'note', q });
 const LANES = { ArrowLeft: 0, KeyA: 0, ArrowDown: 1, KeyS: 1, ArrowUp: 2, KeyW: 2, ArrowRight: 3, KeyD: 3 };
 function openShop() {
+  if (phone.open) togglePhone();
   shop.open = true; shop.sel = null;
   for (const k in keys) keys[k] = false;
   me.moving = false;
 }
-function openBar() { barUi.open = true; for (const k in keys) keys[k] = false; me.moving = false; }
-function openReception() { rec.open = true; rec.won = null; for (const k in keys) keys[k] = false; me.moving = false; }
+function openBar() { if (phone.open) togglePhone(); barUi.open = true; for (const k in keys) keys[k] = false; me.moving = false; }
+function togglePhone() {
+  if (phone.open) { phone.open = false; bar.style.display = 'none'; barSig = ''; }
+  else { openPhone(performance.now()); phone.zone = me.zone; }
+  socket.emit('phone', phone.open);
+  sfx.click();
+}
+const phoneState = () => ({ me: { ...me, outfit: wardrobe.outfit }, meId, players, market, bank: bankState, scene: sceneCopy });
+function openReception() { if (phone.open) togglePhone(); rec.open = true; rec.won = null; for (const k in keys) keys[k] = false; me.moving = false; }
 function closeShop() { shop.open = false; barUi.open = false; rec.open = false; bar.style.display = 'none'; barSig = ''; }
 function refreshShopBar() {
   const { sig, html } = rec.open ? recBar(me) : barUi.open ? barBar(me) : shopBar(meData());
@@ -217,7 +237,9 @@ addEventListener('keydown', e => {
   }
   if (KEYMAP[e.code]) { keys[KEYMAP[e.code]] = true; e.preventDefault(); }
   if (e.key === 'Enter') { chat.style.display = 'block'; chat.focus(); e.preventDefault(); }
-  if (e.code === 'Escape' && (shop.open || barUi.open || rec.open)) closeShop();
+  if (e.code === 'KeyP' && meId && !seated && !shop.open && !barUi.open && !rec.open) togglePhone();
+  if (e.code === 'Escape' && phone.open) togglePhone();
+  else if (e.code === 'Escape' && (shop.open || barUi.open || rec.open)) closeShop();
   else if (e.code === 'Escape' && seated) socket.emit('stand');
   if (e.code === 'Space' && table?.type === 'slots') { spin(); e.preventDefault(); }
   if (/^Digit[1-5]$/.test(e.code)) socket.emit('emote', +e.code[5] - 1);
@@ -248,9 +270,11 @@ cv.addEventListener('mousemove', e => {
   if (barUi.open) barHover(ui.mx, ui.my);
   if (rec.open) recHover(ui.mx, ui.my);
 });
+cv.addEventListener('wheel', e => { if (phone.open && insidePhone(ui.mx, ui.my)) { phoneScroll(e.deltaY); e.preventDefault(); } }, { passive: false });
 cv.addEventListener('click', e => {
   const mx = e.clientX * dpr / scale - ui.ox, my = e.clientY * dpr / scale - ui.oy;
-  if (rec.open) { recClick(mx, my); sfx.click(); }
+  if (phone.open && insidePhone(mx, my)) phoneClick(mx, my, phoneState(), performance.now());
+  else if (rec.open) { recClick(mx, my); sfx.click(); }
   else if (barUi.open) {
     const id = barClick(mx, my);
     if (id) socket.emit('drink', id);
@@ -308,6 +332,7 @@ function frame(now) {
     bx.restore();
     if (table.view.until > now || table.type === 'roulette' || table.type === 'race') refreshBar(); // keeps the chip count fresh
   } else {
+    ui.ox = ui.oy = 0;
     const focus = meId ? me : { x: SPAWN.x + Math.sin(now / 4000) * 200, y: 14 * T };
     const [mw, mh] = me.zone === 'street' ? [ST.w * T, ST.h * T] : me.zone === 'vip' ? [VW * T, VH * T] : [MW * T, MH * T];
     const cam = {
@@ -327,7 +352,17 @@ function frame(now) {
       drawWorld(bx, cam, now, list, meId, n ? [n] : [], race, top);
       if (casinoSay && now - casinoSay.at < 4000) label(bx, casinoSay.text, VIP_BOUNCER.x - cam.x, VIP_BOUNCER.y - 40 - cam.y, '#ff8080', 'rgba(20,0,0,.9)');
     }
+    if (phone.open) {
+      if (sceneCopy.width !== buf.width || sceneCopy.height !== buf.height) { sceneCopy.width = buf.width; sceneCopy.height = buf.height; }
+      sceneX.drawImage(buf, 0, 0);
+    }
     if (meId) hud();
+    if (phone.open) {
+      drawPhone(bx, buf.width, buf.height, now, phoneState());
+      const pb = phoneBar(phoneState());
+      if (pb) { bar.style.display = 'flex'; if (pb.sig !== barSig) { barSig = pb.sig; bar.innerHTML = pb.html; } }
+      else if (barSig.startsWith('ph-')) { bar.style.display = 'none'; barSig = ''; }
+    }
   }
   if (now - kickedAt < 5500) kickedScreen(now - kickedAt);
   if (now - elevatorAt < 2200) elevatorScreen(now - elevatorAt);
@@ -398,7 +433,7 @@ function hud() {
   }
   const online = players.length + (players.length > 1 ? ' JOUEURS' : ' JOUEUR');
   text(bx, online, buf.width - 6, 9, '#80f0ff', 1, 'right', '#000');
-  if (performance.now() - joinedAt < 30000) text(bx, 'ZQSD: BOUGER  E: INTERAGIR  ENTREE: CHAT  1-5: EMOTES  M: MUSIQUE', buf.width / 2, 26, 'rgba(255,255,255,.55)', 1, 'center', '#000');
+  if (performance.now() - joinedAt < 30000) text(bx, 'ZQSD: BOUGER  E: INTERAGIR  ENTREE: CHAT  1-5: EMOTES  M: MUSIQUE  P: TELEPHONE', buf.width / 2, 26, 'rgba(255,255,255,.55)', 1, 'center', '#000');
 }
 
 requestAnimationFrame(frame);

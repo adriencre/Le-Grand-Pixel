@@ -199,7 +199,16 @@ export function playerObjs(x, objs, players, now) {
     const frame = p.moving ? 1 + (Math.floor(t * 8) % 2) : 0;
     const sway = p.drunk ? Math.round(Math.sin(now / 300 + p.x) * p.drunk * 2.5) : 0;
     drawAvatar(x, p.x + sway, p.y, p.outfit, p.color, p.dir, frame, now, { trail: trail(p) });
+    if (p.phone) heldPhone(x, p.x + sway, p.y, p.dir, now);
   }]);
+}
+
+// Small phone in the hand of players who have it open.
+export function heldPhone(x, px, py, dir, now) {
+  if (dir === 3) return;
+  const hx = Math.round(px + (dir === 1 ? -6 : dir === 2 ? 3 : 2)), hy = Math.round(py - 12);
+  x.fillStyle = '#101014'; x.fillRect(hx, hy, 3, 5);
+  x.fillStyle = Math.floor(now / 500) % 2 ? '#80d0ff' : '#a0e8ff'; x.fillRect(hx + 1, hy + 1, 1, 3);
 }
 
 // Chips in front of seated players: a little life in the room.

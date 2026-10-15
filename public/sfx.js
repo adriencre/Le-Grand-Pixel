@@ -9,6 +9,7 @@ export function initAudio() {
   if (musicPref()) startMusic();
 }
 
+const tone_ = (...a) => tone(...a);
 function tone(f, dur, { f2 = f, type = 'square', vol = 0.15, at = 0, bus = out } = {}) {
   if (!ac) return;
   const t = ac.currentTime + at, o = ac.createOscillator(), g = ac.createGain();
@@ -63,6 +64,14 @@ export const sfx = {
   rummage: () => { for (let i = 0; i < 7; i++) noise(0.08, { freq: 600 + (i % 3) * 700, vol: 0.18, at: i * 0.25 }); },
   slam: () => { noise(0.3, { freq: 200, q: 0.5, vol: 0.6 }); tone(70, 0.3, { f2: 40, type: 'triangle', vol: 0.3 }); },
   ding: () => { tone(1318, 0.9, { type: 'sine', vol: 0.15 }); tone(1046, 1.2, { type: 'sine', vol: 0.12, at: 0.25 }); },
+  ring(tone = 'basic', vol = 1) { // phone ringtones
+    const v = 0.1 * vol;
+    if (tone === 'retro') [76, 74, 66, 68, 73, 71, 62, 64, 71, 69, 61, 64, 69].forEach((n, i) => tone_(NOTE(n), 0.13, { vol: v, at: i * 0.14 }));
+    else if (tone === 'disco') [57, 69, 57, 69, 60, 72, 62, 74, 64, 76, 64, 76].forEach((n, i) => tone_(NOTE(n), 0.1, { type: i % 2 ? 'square' : 'triangle', vol: v, at: i * 0.11 }));
+    else for (let r = 0; r < 2; r++) for (let i = 0; i < 8; i++) tone_(i % 2 ? 1600 : 1300, 0.05, { vol: v * 0.8, at: r * 0.7 + i * 0.05 });
+  },
+  shutter: () => { noise(0.04, { freq: 5000, vol: 0.3 }); noise(0.06, { freq: 2000, vol: 0.2, at: 0.08 }); },
+  notif: () => { tone(1500, 0.06, { type: 'sine', vol: 0.1 }); tone(2000, 0.08, { type: 'sine', vol: 0.1, at: 0.08 }); },
   pop: () => tone(500, 0.08, { f2: 1300, vol: 0.1 }),
   blip: () => { tone(1200, 0.04, { vol: 0.06 }); tone(1600, 0.05, { vol: 0.05, at: 0.05 }); },
   win(amount) {

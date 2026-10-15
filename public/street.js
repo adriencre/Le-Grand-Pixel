@@ -3,7 +3,7 @@ import { T, ST, BINS, BUSK, LAMPS, BENCH, HYDRANT, BOUNCER, ENTRY_MIN, nearDoorO
 import { canvas, text, label, plantSprite } from './sprites.js';
 import { drawAvatar } from './avatar.js';
 import { BY_SLOT, NPC_OUTFITS, SKINS, HAIR_COLORS } from './items.js';
-import { overheads } from './world.js';
+import { overheads, heldPhone } from './world.js';
 
 const W = ST.w * T, H = ST.h * T;
 const DOOR_X = 20 * T;
@@ -240,6 +240,7 @@ export function drawStreet(x, cam, now, players, meId, prompts) {
     }
     const sway = p.drunk ? Math.round(Math.sin(now / 300 + p.x) * p.drunk * 2.5) : 0;
     drawAvatar(x, p.x + sway, p.y, p.outfit, p.color, p.dir, frame, now, { homeless: p.homeless });
+    if (p.phone && !p.busking) heldPhone(x, p.x + sway, p.y, p.dir, now);
     if (p.busking) { // guitar held across the body + notes
       const gx = p.x - 7, gy = p.y - 10, strum = Math.floor(now / 140) % 2;
       x.fillStyle = '#3a2010'; x.fillRect(gx + 7, gy - 1 + strum, 9, 2);

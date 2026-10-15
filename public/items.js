@@ -85,6 +85,17 @@ const RAW = [
   // price -1: not for sale, only found in the street trash cans
   ['acc_sacpoubelle', 'acc', 'Cape sac-poubelle', -1, 2, 'cape', { a: '#1c1c22', c: '#34343c' }, 'Le chic de la rue.'],
   ['acc_guitare', 'acc', 'Guitare de rue', -1, 2, 'guitar', { a: '#b06a2a', c: '#1a1008', x: '#3a2010' }, 'Elle en a vu, des trottoirs.'],
+  // telephone: model, wallpaper, ringtone
+  ['ph_basic', 'phone', 'Telephone basique', 0, 0, 'basic', { a: '#2a2a34' }, 'Il fait le job.'],
+  ['ph_nokia', 'phone', 'Vieux Nokia', 300, 0, 'nokia', { a: '#5a6a7a' }, 'Increvable. Ecran vert.'],
+  ['ph_clapet', 'phone', 'Clapet retro', 1500, 0, 'clapet', { a: '#8a1830' }, 'Clac ! Tres annees 2000.'],
+  ['ph_smart', 'phone', 'Smartphone', 6000, 1, 'smart', { a: '#101014' }, 'Ecran bord a bord.'],
+  ['ph_or', 'phone', 'Telephone en or', 60000, 3, 'gold', { a: '#e8b830' }, 'Ca brille dans la poche.'],
+  ['wp_neon', 'wallpaper', 'Fond neon', 200, 0, 'neon', null, 'Grille retro-futuriste.'],
+  ['wp_plage', 'wallpaper', 'Fond plage', 400, 0, 'beach', null, 'Les vacances apres le jackpot.'],
+  ['wp_galaxie', 'wallpaper', 'Fond galaxie', 2000, 1, 'galaxy', null, 'Des etoiles plein l\'ecran.'],
+  ['rt_retro', 'ringtone', 'Sonnerie retro', 300, 0, 'retro', null, 'La melodie que tout le monde connait.'],
+  ['rt_disco', 'ringtone', 'Sonnerie disco', 800, 0, 'disco', null, 'Ca groove quand on t\'appelle.'],
   // effets
   ['fx_coeurs', 'fx', 'Coeurs', 4000, 1, 'hearts', null, 'Tout le monde t\'aime.'],
   ['fx_notes', 'fx', 'Notes de musique', 4500, 1, 'music', null, 'Tu as le rythme.'],
@@ -97,15 +108,15 @@ const RAW = [
 ];
 
 export const ITEMS = Object.fromEntries(RAW.map(([id, slot, name, price, rarity, style, colors, desc]) => [id, { id, slot, name, price, rarity, style, colors, desc }]));
-export const SLOTS = ['hat', 'hair', 'glasses', 'top', 'bottom', 'shoes', 'acc', 'fx'];
-export const REMOVABLE = ['hat', 'glasses', 'acc', 'fx']; // the others always need something
+export const SLOTS = ['hat', 'hair', 'glasses', 'top', 'bottom', 'shoes', 'acc', 'fx', 'phone', 'wallpaper', 'ringtone'];
+export const REMOVABLE = ['hat', 'glasses', 'acc', 'fx', 'wallpaper', 'ringtone']; // the others always need something
 export const BY_SLOT = Object.fromEntries(SLOTS.map(s => [s, RAW.filter(r => r[1] === s).map(r => ITEMS[r[0]])]));
 
 function hash(s) { let h = 7; for (const ch of String(s)) h = (h * 31 + ch.charCodeAt(0)) >>> 0; return h; }
 
 export function defaultOutfit(name) {
   const h = hash(name);
-  return { hat: null, hair: 'hair_court', glasses: null, top: 'top_tee', bottom: 'bot_jean', shoes: 'sh_basic', acc: null, fx: null, skin: h % SKINS.length, hairColor: (h >> 4) % 6 };
+  return { hat: null, hair: 'hair_court', glasses: null, top: 'top_tee', bottom: 'bot_jean', shoes: 'sh_basic', acc: null, fx: null, phone: 'ph_basic', wallpaper: null, ringtone: null, skin: h % SKINS.length, hairColor: (h >> 4) % 6 };
 }
 
 // Staff and shop mannequins.
