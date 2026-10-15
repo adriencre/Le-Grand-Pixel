@@ -1,5 +1,6 @@
 import { T, MW, MH, ST, VW, VH, TIERS, VIP_BOUNCER, ENTRY_MIN, COLORS, SPAWN, TABLES } from './map.js';
 import { drawVip } from './viproom.js';
+import { daily, showDaily, dismissDaily, drawDaily } from './daily.js';
 import { phone, openPhone, notify, drawPhone, phoneClick, insidePhone, phoneScroll, phoneBar, phoneBarClick } from './phone.js';
 import { rec, drawReception, recHover, recClick, recBar } from './reception.js';
 import { drawStreet, nearbyStreet, streetState, tipFx, floatAt } from './street.js';
@@ -38,6 +39,7 @@ resize();
 
 // ---------- state ----------
 let meId = null, me = { x: SPAWN.x, y: SPAWN.y, dir: 3, moving: false, chips: 0, drunk: 0, zone: 'casino', homeless: false, hype: 0, vip: 0, name: '' }, seated = null;
+let msgList = [];
 let phoneVisible = false, elevatorAt = -1e9, casinoSay = null, market = null, bankState = {};
 const [sceneCopy, sceneX] = canvas(SW, SH); // last world frame without HUD/phone, for photos
 let kickedAt = -1e9;
@@ -151,6 +153,15 @@ socket.on('loot', l => {
 socket.on('binshake', m => { streetState.bins[m.i].shakeUntil = performance.now() + 2000; if (m.id === meId) sfx.rummage(); });
 socket.on('bins', left => left.forEach((ms, i) => { streetState.bins[i].until = performance.now() + ms; }));
 socket.on('market', m => { market = m; });
+socket.on('daily', r => showDaily(r, performance.now()));
+socket.on('msg:list', l => { msgList = l; });
+socket.on('msg:convo', c => { if (phone.convo?.name.toLowerCase() === c.name.toLowerCase()) phone.convo = c; socket.emit('msg:list'); });
+socket.on('msg', m => {
+  notify(`${m.from} : ${m.text}`, performance.now());
+  sys('💬 Message de ' + m.from);
+  if (phone.open && phone.app === 'convo' && phone.convo?.name.toLowerCase() === m.from.toLowerCase()) socket.emit('msg:open', m.from);
+  else socket.emit('msg:list');
+});
 socket.on('bank', b => { bankState = b; });
 socket.on('bankMsg', t => { notify(t, performance.now()); sys('📱 ' + t); });
 socket.on('ring', m => {
@@ -200,6 +211,12 @@ bar.addEventListener('click', e => {
   else if ('close' in d) closeShop();
   b.blur();
 });
+bar.addEventListener('keydown', e => { // Enter sends a phone message / opens a conversation
+  if (e.key !== 'Enter' || !['phMsg', 'phTo'].includes(e.target.id)) return;
+  e.preventDefault();
+  bar.querySelector(`[data-ph='{"a":"${e.target.id === 'phMsg' ? 'msg' : 'to'}"}']`)?.click();
+  e.target.focus();
+});
 bar.addEventListener('input', e => { if (e.target.id === 'raise') $('raiseV').textContent = e.target.value; });
 function setZone(z) {
   if (z === me.zone) return;
@@ -224,7 +241,7 @@ function togglePhone() {
   socket.emit('phone', phone.open);
   sfx.click();
 }
-const phoneState = () => ({ me: { ...me, outfit: wardrobe.outfit }, meId, players, market, bank: bankState, scene: sceneCopy });
+const phoneState = () => ({ me: { ...me, outfit: wardrobe.outfit }, meId, players, market, bank: bankState, scene: sceneCopy, msgs: msgList, unread: msgList.reduce((a, c) => a + c.unread, 0) });
 function openReception() { if (phone.open) togglePhone(); rec.open = true; rec.won = null; for (const k in keys) keys[k] = false; me.moving = false; }
 function closeShop() { shop.open = false; barUi.open = false; rec.open = false; bar.style.display = 'none'; barSig = ''; }
 function refreshShopBar() {
@@ -244,6 +261,7 @@ addEventListener('keydown', e => {
     return;
   }
   if (e.target.tagName === 'INPUT') return;
+  if (daily.show) { if (['Enter', 'Escape', 'Space'].includes(e.code)) dismissDaily(); return; }
   if (busk.on) { // playing guitar: arrows are notes, E / Escape stops
     if (e.code in LANES && !e.repeat) { hitBusk(LANES[e.code], performance.now(), emitNote); e.preventDefault(); }
     if (e.code === 'Escape' || e.code === 'KeyE') socket.emit('busk', { a: 'stop' });
@@ -290,7 +308,8 @@ cv.addEventListener('mousemove', e => {
 cv.addEventListener('wheel', e => { if (phone.open && insidePhone(ui.mx, ui.my)) { phoneScroll(e.deltaY); e.preventDefault(); } }, { passive: false });
 cv.addEventListener('click', e => {
   const mx = e.clientX * dpr / scale - ui.ox, my = e.clientY * dpr / scale - ui.oy;
-  if (phone.open && insidePhone(mx, my)) phoneClick(mx, my, phoneState(), performance.now());
+  if (daily.show) return dismissDaily();
+  if (phone.open && insidePhone(mx, my)) { const act = phoneClick(mx, my, phoneState(), performance.now()); if (act) socket.emit(...act); }
   else if (rec.open) { recClick(mx, my); sfx.click(); }
   else if (barUi.open) {
     const id = barClick(mx, my);
@@ -382,6 +401,7 @@ function frame(now) {
     }
   }
   if (now - kickedAt < 5500) kickedScreen(now - kickedAt);
+  drawDaily(bx, buf.width, buf.height, now);
   if (now - elevatorAt < 2200) elevatorScreen(now - elevatorAt);
   const W = buf.width * scale, H = buf.height * scale, d = me.drunk;
   const showPhone = phoneVisible; phoneVisible = false;

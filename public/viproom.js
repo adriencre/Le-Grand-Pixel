@@ -2,9 +2,32 @@
 import { T, VW, VH, VIP_TABLES, V_NPCS, VIP_SPAWN, VIP_BAR, PIANO } from './map.js';
 import { canvas, text, label } from './sprites.js';
 import { tableObjs, npcObjs, playerObjs, tableChips, overheads } from './world.js';
+import { darkness, twilight } from './daylight.js';
 
 const W = VW * T, H = VH * T;
 const seeded = k => { const s = Math.sin(k * 77.31) * 10000; return s - Math.floor(s); };
+
+// The same skyline by day: blue sky, sun, clouds, unlit windows. Crossfaded with the night one.
+let daySky = null;
+function dayWindows() {
+  if (daySky) return daySky;
+  const [c, x] = canvas(W, 53);
+  const px = (col, X, Y, w = 1, h = 1) => { x.fillStyle = col; x.fillRect(X, Y, w, h); };
+  const sky = x.createLinearGradient(0, 0, 0, 52);
+  sky.addColorStop(0, '#4a90e0'); sky.addColorStop(1, '#bfe0ff');
+  x.fillStyle = sky; x.fillRect(0, 0, W, 52);
+  px('#fff6c0', 100, 6, 12, 12); px('#ffe890', 102, 8, 8, 8); // sun
+  for (let k = 0; k < 7; k++) { const cx = Math.floor(seeded(k + 200) * W), cy = 4 + Math.floor(seeded(k + 210) * 14); px('#ffffff', cx, cy, 22, 4); px('#ffffff', cx + 5, cy - 2, 12, 2); }
+  for (let X = 0, k = 0; X < W; k++) {
+    const bw = 14 + Math.floor(seeded(k + 10) * 26), bh = 14 + Math.floor(seeded(k + 20) * 28);
+    px(seeded(k + 30) > 0.5 ? '#5a6a84' : '#6c7c98', X, 52 - bh, bw, bh);
+    for (let wy = 52 - bh + 3; wy < 50; wy += 4) for (let wx = X + 2; wx < X + bw - 2; wx += 4) px(seeded(wx * 3 + wy) > 0.5 ? '#9ec4ec' : '#3a4a64', wx, wy, 2, 2);
+    X += bw + 2;
+  }
+  for (let X = 0; X < W; X += 48) px('#c8a040', X, 0, 3, 52);
+  px('#c8a040', 0, 0, W, 2); px('#c8a040', 0, 50, W, 3);
+  return (daySky = c);
+}
 
 let bg = null;
 function background() {
@@ -126,6 +149,9 @@ function statue(x, sx, sy, now) {
 export function drawVip(x, cam, now, players, meId, prompts, myVip) {
   const t = now / 1000;
   x.drawImage(background(), -cam.x, -cam.y);
+  const dk = darkness();
+  if (dk < 1) { x.globalAlpha = 1 - dk; x.drawImage(dayWindows(), -cam.x, -cam.y); x.globalAlpha = 1; }
+  if (twilight(dk) > 0) { x.fillStyle = `rgba(255,120,50,${0.35 * twilight(dk)})`; x.fillRect(-cam.x, -cam.y, W, 52); }
   x.save(); x.translate(-cam.x, -cam.y);
   const objs = [];
   tableObjs(x, objs, VIP_TABLES, players, now);

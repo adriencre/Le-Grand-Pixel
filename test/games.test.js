@@ -166,3 +166,16 @@ test('market: 16 listings in known sectors, cryptos stay sane, index starts at 1
   assert.equal(trade(p, 'dogepix', 4000, 2), -8080); // 8000 + 1% fee
   assert.equal(trade(p, 'dogepix', -4000, 2.5), 9900);
 });
+
+test('daily reward: streak grows day after day, resets after a gap, chest on day 7', async () => {
+  const { claimDaily, DAILY } = await import('../games/daily.js');
+  const day = 86400000, t0 = new Date('2026-10-01T12:00:00').getTime();
+  let d, r = claimDaily(undefined, t0, []);
+  assert.equal(r.reward.chips, DAILY[0]);
+  assert.equal(claimDaily(r.daily, t0 + 3600000, []), null, 'once per day');
+  for (let k = 1; k < 6; k++) { r = claimDaily(r.daily, t0 + k * day, []); assert.equal(r.reward.day, k + 1); }
+  d = claimDaily(r.daily, t0 + 6 * day, ['hat_cap'], () => 0.1);
+  assert.ok(d.reward.chest && d.reward.item === 'hat_cap');
+  assert.equal(claimDaily(d.daily, t0 + 7 * day, []).reward.day, 1, 'after the chest a new week starts');
+  assert.equal(claimDaily(r.daily, t0 + 9 * day, []).reward.day, 1, 'a missed day resets the streak');
+});

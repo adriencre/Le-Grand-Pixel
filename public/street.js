@@ -4,6 +4,7 @@ import { canvas, text, label, plantSprite } from './sprites.js';
 import { drawAvatar } from './avatar.js';
 import { BY_SLOT, NPC_OUTFITS, SKINS, HAIR_COLORS } from './items.js';
 import { overheads, heldPhone } from './world.js';
+import { darkness, twilight } from './daylight.js';
 
 const W = ST.w * T, H = ST.h * T;
 const DOOR_X = 20 * T;
@@ -125,7 +126,7 @@ function drawCars(x, now) {
     x.fillStyle = '#9ac8f0'; x.fillRect(X - 7, Y + 1, 14, 4);
     x.fillStyle = c.col; x.fillRect(X - 1, Y + 1, 2, 4);
     x.fillStyle = '#101014'; x.fillRect(X - 12, Y + 9, 5, 3); x.fillRect(X + 7, Y + 9, 5, 3);
-    x.fillStyle = '#fff6a0'; x.fillRect(dir > 0 ? X + 14 : X - 15, Y + 2, 1, 3);
+    x.fillStyle = darkness() > 0.3 ? '#fff6a0' : '#c8c8b0'; x.fillRect(dir > 0 ? X + 14 : X - 15, Y + 2, 1, 3);
     x.fillStyle = '#ff3030'; x.fillRect(dir > 0 ? X - 15 : X + 14, Y + 2, 1, 3);
   }
 }
@@ -183,11 +184,11 @@ function bin(x, i, now, st) {
     }
   }
 }
-function lamp(x, lx, ly) {
+function lamp(x, lx, ly, on) {
   x.fillStyle = '#1a1a22'; x.fillRect(lx - 1, ly - 44, 3, 44);
   x.fillStyle = '#2a2a34'; x.fillRect(lx - 3, ly - 2, 7, 2);
   x.fillStyle = '#1a1a22'; x.fillRect(lx - 4, ly - 47, 9, 4);
-  x.fillStyle = '#fff0b0'; x.fillRect(lx - 3, ly - 43, 7, 2);
+  x.fillStyle = on ? '#fff0b0' : '#9a9aa4'; x.fillRect(lx - 3, ly - 43, 7, 2);
 }
 function ropes(x) {
   for (const sx of [DOOR_X - 30, DOOR_X + 28]) for (const sy of [6 * T + 8, 8 * T + 4]) { x.fillStyle = '#c8a040'; x.fillRect(sx, sy - 10, 2, 10); x.fillRect(sx - 1, sy - 11, 4, 2); }
@@ -202,12 +203,15 @@ export function drawStreet(x, cam, now, players, meId, prompts) {
   const t = now / 1000;
   x.drawImage(background(), -cam.x, -cam.y);
   x.save(); x.translate(-cam.x, -cam.y);
-  // neon sign + canopy bulbs
-  const flick = Math.sin(t * 9) > 0.96 ? 0.3 : 1;
-  x.globalAlpha = 0.35 * flick;
-  for (const [dx, dy] of [[-1, 0], [1, 0], [0, -1], [0, 1]]) text(x, 'LE GRAND PIXEL', DOOR_X + dx, 20 + dy, '#ff2090', 2, 'center');
-  x.globalAlpha = flick; text(x, 'LE GRAND PIXEL', DOOR_X, 20, '#ff8ad8', 2, 'center'); x.globalAlpha = 1;
-  for (let k = 0; k < 10; k++) { x.fillStyle = (k + Math.floor(t * 6)) % 3 === 0 ? '#fff6a0' : '#806020'; x.fillRect(DOOR_X - 38 + k * 8, 48, 4, 3); }
+  // neon sign + canopy bulbs: off by day, they stutter on at dusk
+  const dark = darkness(), lit = dark > 0.5 || (dark > 0.15 && Math.sin(t * 23) > 0.2);
+  if (lit) {
+    const flick = Math.sin(t * 9) > 0.96 ? 0.3 : 1;
+    x.globalAlpha = 0.35 * flick;
+    for (const [dx, dy] of [[-1, 0], [1, 0], [0, -1], [0, 1]]) text(x, 'LE GRAND PIXEL', DOOR_X + dx, 20 + dy, '#ff2090', 2, 'center');
+    x.globalAlpha = flick; text(x, 'LE GRAND PIXEL', DOOR_X, 20, '#ff8ad8', 2, 'center'); x.globalAlpha = 1;
+  } else text(x, 'LE GRAND PIXEL', DOOR_X, 20, '#7a4a62', 2, 'center', '#2a1020');
+  for (let k = 0; k < 10; k++) { x.fillStyle = lit && (k + Math.floor(t * 6)) % 3 === 0 ? '#fff6a0' : '#806020'; x.fillRect(DOOR_X - 38 + k * 8, 48, 4, 3); }
   ropes(x);
   // busking spot
   x.fillStyle = '#b08850'; x.fillRect(BUSK.x - 14, BUSK.y - 6, 28, 12);
@@ -217,7 +221,7 @@ export function drawStreet(x, cam, now, players, meId, prompts) {
 
   const objs = [];
   BINS.forEach((b, i) => objs.push([b[1] * T, () => bin(x, i, now, streetState.bins[i])]));
-  for (const [lx, ly] of LAMPS) objs.push([ly * T, () => lamp(x, lx * T, ly * T)]);
+  for (const [lx, ly] of LAMPS) objs.push([ly * T, () => lamp(x, lx * T, ly * T, dark > 0.25)]);
   objs.push([BENCH[1] * T, () => {
     const bx = BENCH[0] * T, by = BENCH[1] * T;
     x.fillStyle = '#2a1a10'; x.fillRect(bx + 2, by - 4, 2, 5); x.fillRect(bx + 28, by - 4, 2, 5);
@@ -265,17 +269,22 @@ export function drawStreet(x, cam, now, players, meId, prompts) {
 
 let lightBuf = null;
 function nightLights(x, t) {
+  const d = darkness();
+  if (twilight(d) > 0) { // orange sky glow at dawn and dusk
+    x.fillStyle = `rgba(255,110,40,${0.24 * twilight(d)})`; x.fillRect(0, 0, W, H);
+  }
+  if (d <= 0) return; // broad daylight: no lamps, no shadows
   if (!lightBuf) lightBuf = canvas(W / 4, H / 4);
   const [lc, l] = lightBuf;
   l.globalCompositeOperation = 'source-over';
-  l.fillStyle = 'rgba(6,8,30,.62)'; l.fillRect(0, 0, W / 4, H / 4);
+  l.fillStyle = `rgba(6,8,30,${0.62 * d})`; l.fillRect(0, 0, W / 4, H / 4);
   l.globalCompositeOperation = 'destination-out';
   const spot = (sx, sy, r, a) => {
     const g = l.createRadialGradient(sx / 4, sy / 4, 0, sx / 4, sy / 4, r / 4);
     g.addColorStop(0, `rgba(0,0,0,${a})`); g.addColorStop(1, 'rgba(0,0,0,0)');
     l.fillStyle = g; l.fillRect(sx / 4 - r / 4, sy / 4 - r / 4, r / 2, r / 2);
   };
-  for (const [lx, ly] of LAMPS) spot(lx * T, ly * T - 20, 80, 0.9);
+  if (d > 0.25) for (const [lx, ly] of LAMPS) spot(lx * T, ly * T - 20, 80, 0.9);
   spot(DOOR_X, 5 * T, 110, 0.95);
   spot(BUSK.x, BUSK.y, 40, 0.5);
   for (let X = 24; X < W; X += 56) spot(X + 14, 30, 40, 0.5);
@@ -283,8 +292,8 @@ function nightLights(x, t) {
   x.save(); x.imageSmoothingEnabled = true; x.drawImage(lc, 0, 0, W, H); x.restore();
   x.save(); x.globalCompositeOperation = 'lighter';
   const glow = (gx, gy, r, col) => { const g = x.createRadialGradient(gx, gy, 0, gx, gy, r); g.addColorStop(0, col); g.addColorStop(1, 'rgba(0,0,0,0)'); x.fillStyle = g; x.fillRect(gx - r, gy - r, r * 2, r * 2); };
-  glow(DOOR_X, 26, 80, `rgba(255,40,160,${0.18 + 0.04 * Math.sin(t * 3)})`);
-  for (const [lx, ly] of LAMPS) glow(lx * T, ly * T - 30, 50, 'rgba(255,200,100,.16)');
+  glow(DOOR_X, 26, 80, `rgba(255,40,160,${(0.18 + 0.04 * Math.sin(t * 3)) * d})`);
+  if (d > 0.25) for (const [lx, ly] of LAMPS) glow(lx * T, ly * T - 30, 50, `rgba(255,200,100,${0.16 * d})`);
   x.restore();
 }
 

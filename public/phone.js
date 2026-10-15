@@ -100,11 +100,13 @@ function cracks(x, X, Y) {
 }
 
 // ---------- apps ----------
-const APPS = [['bank', 'BANQUE', '#e8b830'], ['map', 'PLAN', '#2fb36b'], ['photo', 'PHOTO', '#3a7bd5'], ['stocks', 'BOURSE', '#ff4ab0']];
+const APPS = [['msgs', 'MESSAGES', '#22c4c4'], ['bank', 'BANQUE', '#e8b830'], ['map', 'PLAN', '#2fb36b'], ['photo', 'PHOTO', '#3a7bd5'], ['stocks', 'BOURSE', '#ff4ab0']];
+const appPos = i => [6 + (i % 3) * 31, 56 + Math.floor(i / 3) * 44];
 const ICON_GRIDS = {
   bank: ['....aa....', '..aaaaaa..', 'aaaaaaaaaa', '.a.a.a.a..', '.a.a.a.a..', '.a.a.a.a..', 'aaaaaaaaaa'],
   map: ['aa..aa..aa', 'a.aa.aa.aa', 'a.aa.aa.aa', 'aa.a.aaa.a', 'a.aa.aa.aa', 'aa..aa..aa', '..........'],
   photo: ['...aaa....', 'aaaaaaaaaa', 'a...aa...a', 'a..a..a..a', 'a..a..a..a', 'a...aa...a', 'aaaaaaaaaa'],
+  msgs: ['.aaaaaaaa.', 'aaaaaaaaaa', 'a........a', 'a.aa.aa.aa', 'a........a', 'aaaaaaaaaa', '.aa.......'],
   stocks: ['.........a', '........aa', '.....a.a..', '....a.a...', '.a.a......', 'a.a.......', 'aaaaaaaaaa'],
 };
 function appIcon(x, id, col, X, Y) {
@@ -135,9 +137,13 @@ function home(x, X, Y, S, now) {
   text(x, String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0'), X + SW / 2, Y + 18, '#fff', 3, 'center', 'rgba(0,0,0,.5)');
   text(x, 'LE GRAND PIXEL', X + SW / 2, Y + 38, 'rgba(255,255,255,.8)', 1, 'center');
   APPS.forEach(([id, name, col], i) => {
-    const ix = X + 14 + (i % 2) * 40, iy = Y + 56 + Math.floor(i / 2) * 44;
+    const [ax, ay] = appPos(i), ix = X + ax, iy = Y + ay;
     appIcon(x, id, col, ix, iy);
-    text(x, name, ix + 14, iy + 31, '#fff', 1, 'center', 'rgba(0,0,0,.6)');
+    text(x, name.slice(0, 7), ix + 14, iy + 31, '#fff', 1, 'center', 'rgba(0,0,0,.6)');
+    if (id === 'msgs' && S.unread) { // unread badge
+      x.fillStyle = '#e02838'; x.fillRect(ix + 20, iy - 3, 11, 9);
+      text(x, S.unread > 9 ? '9+' : S.unread, ix + 26, iy - 1, '#fff', 1, 'center');
+    }
   });
 }
 
@@ -314,6 +320,59 @@ function download(i) {
   document.body.append(a); a.click(); a.remove();
 }
 
+// ---------- private messages ----------
+function msgs(x, X, Y, S) {
+  header(x, X, Y, 'MESSAGES');
+  x.fillStyle = '#22c4c4'; x.fillRect(X + 4, Y + 24, SW - 8, 10);
+  text(x, '+ NOUVEAU MESSAGE', X + SW / 2, Y + 27, '#08282a', 1, 'center');
+  const online = new Set(S.players.map(p => p.name.toLowerCase()));
+  x.save(); x.beginPath(); x.rect(X, Y + 36, SW, SH - 36); x.clip();
+  S.msgs.forEach((c, i) => {
+    const yy = Y + 37 + i * 18 - phone.scroll;
+    x.fillStyle = i % 2 ? 'rgba(255,255,255,.04)' : 'rgba(255,255,255,.08)'; x.fillRect(X + 2, yy, SW - 4, 17);
+    x.fillStyle = online.has(c.name.toLowerCase()) ? '#60ff80' : '#4a4058'; x.fillRect(X + 4, yy + 3, 3, 3);
+    text(x, c.name, X + 10, yy + 2, c.unread ? '#ffe680' : '#fff');
+    text(x, c.text.slice(0, 20), X + 10, yy + 9, '#9a90b0');
+    if (c.unread) { x.fillStyle = '#e02838'; x.fillRect(X + SW - 14, yy + 3, 10, 8); text(x, Math.min(9, c.unread), X + SW - 9, yy + 5, '#fff', 1, 'center'); }
+  });
+  if (!S.msgs.length) text(x, 'AUCUNE CONVERSATION', X + SW / 2, Y + 60, '#6a6080', 1, 'center');
+  x.restore();
+}
+
+function newmsg(x, X, Y, S) {
+  header(x, X, Y, 'NOUVEAU');
+  text(x, 'EN LIGNE :', X + 5, Y + 26, '#a8a0c0');
+  S.players.filter(p => p.id !== S.meId).forEach((p, i) => {
+    const yy = Y + 34 + i * 13;
+    x.fillStyle = 'rgba(255,255,255,.08)'; x.fillRect(X + 4, yy, SW - 8, 11);
+    x.fillStyle = p.color; x.fillRect(X + 6, yy + 3, 5, 5);
+    text(x, p.name, X + 14, yy + 3, '#fff');
+  });
+}
+
+function convo(x, X, Y) {
+  const c = phone.convo;
+  header(x, X, Y, c ? c.name : '');
+  if (!c) return;
+  // Wrap every message, then stack the bubbles from the bottom up.
+  const blocks = c.messages.map(m => {
+    const lines = [''];
+    for (const w of m.text.split(' ')) { if ((lines.at(-1) + ' ' + w).length > 17) lines.push(w.slice(0, 17)); else lines[lines.length - 1] = (lines.at(-1) + ' ' + w).trim(); }
+    return { m, lines };
+  });
+  x.save(); x.beginPath(); x.rect(X, Y + 23, SW, SH - 23); x.clip();
+  let y = Y + SH - 3 + phone.scroll;
+  for (let i = blocks.length - 1; i >= 0; i--) {
+    const { m, lines } = blocks[i], h = lines.length * 7 + 4, w = Math.max(...lines.map(l => l.length)) * 4 + 6;
+    y -= h + 3;
+    const bx = m.mine ? X + SW - w - 3 : X + 3;
+    x.fillStyle = m.mine ? '#c8a040' : '#3a3448'; x.fillRect(bx, y, w, h);
+    lines.forEach((l, k) => text(x, l, bx + 3, y + 3 + k * 7, m.mine ? '#1a1008' : '#fff'));
+  }
+  if (!blocks.length) text(x, 'DIS BONJOUR !', X + SW / 2, Y + 80, '#6a6080', 1, 'center');
+  x.restore();
+}
+
 // ---------- stock exchange: markets, one listing, my portfolio ----------
 const SORTS = ['NOM', 'HAUSSE', 'BAISSE'];
 const stockOf = id => STOCKS.find(s => s.id === id);
@@ -448,7 +507,7 @@ function drawPhoneAt(x, w, h, now, S) {
   x.save(); x.beginPath(); x.rect(X, Y, SW, SH); x.clip();
   wallpaper(x, ITEMS[S.me.outfit?.wallpaper]?.style, X, Y, SW, SH, now);
   if (phone.app !== 'home') { x.fillStyle = 'rgba(8,4,16,.82)'; x.fillRect(X, Y, SW, SH); }
-  ({ home, bank, send, map, photo, gallery, stocks })[phone.app](x, X, Y, S, now);
+  ({ home, bank, send, map, photo, gallery, stocks, msgs, newmsg, convo })[phone.app](x, X, Y, S, now);
   statusBar(x, X, Y, S.me.homeless, now);
   if (phone.notif && now - phone.notif.at < 4000) {
     x.fillStyle = 'rgba(30,20,50,.95)'; x.fillRect(X + 2, Y + 11, SW - 4, 16);
@@ -478,11 +537,21 @@ export function drawPhoneMini(x, o, cx, cy, now) {
 export function phoneClick(mx, my, S, now) {
   if (!inR(mx, my, 0, 0, SW, SH)) return null;
   if (phone.app !== 'home' && inR(mx, my, 0, 9, 22, 13)) { // back
-    phone.app = phone.app === 'send' ? 'bank' : phone.app === 'gallery' && phone.view >= 0 ? (phone.view = -1, 'gallery') : phone.app === 'gallery' ? 'photo' : phone.app === 'stocks' && phone.stock ? (phone.stock = null, 'stocks') : phone.app === 'stocks' && phone.sv === 'portfolio' ? (phone.sv = 'market', 'stocks') : 'home';
-    phone.scroll = 0; sfx.click(); return null;
+    phone.app = phone.app === 'convo' || phone.app === 'newmsg' ? 'msgs' : phone.app === 'send' ? 'bank' : phone.app === 'gallery' && phone.view >= 0 ? (phone.view = -1, 'gallery') : phone.app === 'gallery' ? 'photo' : phone.app === 'stocks' && phone.stock ? (phone.stock = null, 'stocks') : phone.app === 'stocks' && phone.sv === 'portfolio' ? (phone.sv = 'market', 'stocks') : 'home';
+    phone.scroll = 0; sfx.click();
+    return phone.app === 'msgs' ? ['msg:list'] : null;
   }
   if (phone.app === 'home') {
-    APPS.forEach(([id], i) => { if (inR(mx, my, 14 + (i % 2) * 40, 56 + Math.floor(i / 2) * 44, 28, 28)) { phone.app = id; phone.scroll = 0; sfx.click(); } });
+    let act = null;
+    APPS.forEach(([id], i) => { const [ax, ay] = appPos(i); if (inR(mx, my, ax, ay, 28, 28)) { phone.app = id; phone.scroll = 0; sfx.click(); if (id === 'msgs') act = ['msg:list']; } });
+    return act;
+  } else if (phone.app === 'msgs') {
+    if (inR(mx, my, 4, 24, SW - 8, 10)) { phone.app = 'newmsg'; sfx.click(); return null; }
+    const row = S.msgs.find((_, i) => my >= scr.y + 36 && inR(mx, my + phone.scroll, 2, 37 + i * 18, SW - 4, 17));
+    if (row) { phone.app = 'convo'; phone.convo = { name: row.name, messages: [] }; phone.scroll = 0; sfx.click(); return ['msg:open', row.name]; }
+  } else if (phone.app === 'newmsg') {
+    const p = S.players.filter(q => q.id !== S.meId).find((_, i) => inR(mx, my, 4, 34 + i * 13, SW - 8, 11));
+    if (p) { phone.app = 'convo'; phone.convo = { name: p.name, messages: [] }; phone.scroll = 0; sfx.click(); return ['msg:open', p.name]; }
   } else if (phone.app === 'bank') {
     if (inR(mx, my, 8, 85, SW - 16, 11)) { phone.app = 'send'; phone.sendTo = null; sfx.click(); }
   } else if (phone.app === 'send') {
@@ -534,6 +603,13 @@ export function phoneBar(S) {
         [1, 10, 100].map(q => btn(-q, 'Vendre ' + q)).join('') + btn(-held, `TOUT (${held.toLocaleString('fr-FR')})`),
     };
   }
+  const field = (id, ph) => `<input id="${id}" maxlength="200" placeholder="${ph}" autocomplete="off" style="width:260px;max-width:60vw;padding:9px;background:#0a0410;color:#fff;border:0;box-shadow:0 0 0 2px #6a4a7a">`;
+  if (phone.app === 'convo' && phone.convo) {
+    return { sig: 'ph-convo' + phone.convo.name, html: `<span class="info">À ${phone.convo.name} :</span>` + field('phMsg', 'Ton message… (Entrée)') + '<button class="go" data-ph=\'{"a":"msg"}\'>Envoyer</button>' };
+  }
+  if (phone.app === 'newmsg') {
+    return { sig: 'ph-new', html: '<span class="info">Ou écris un pseudo :</span>' + field('phTo', 'Pseudo') + '<button class="go" data-ph=\'{"a":"to"}\'>Ouvrir</button>' };
+  }
   if (phone.app === 'gallery' && phone.view >= 0) {
     return { sig: 'ph-view' + phone.view, html: '<button class="go" data-ph=\'{"a":"dl"}\'>Télécharger en PNG</button><button data-ph=\'{"a":"del"}\'>Supprimer</button>' };
   }
@@ -548,6 +624,18 @@ export function phoneBarClick(d) {
     return ['bank:send', { to: phone.sendTo, amount: amt }];
   }
   if (d.a === 'stock') return ['stock', { id: phone.stock, qty: d.qty }];
+  if (d.a === 'msg') {
+    const el = document.getElementById('phMsg'), text = el?.value.trim();
+    if (!text || !phone.convo) return null;
+    el.value = ''; el.focus();
+    return ['msg:send', { to: phone.convo.name, text }];
+  }
+  if (d.a === 'to') {
+    const name = document.getElementById('phTo')?.value.trim();
+    if (!name) return null;
+    phone.app = 'convo'; phone.convo = { name, messages: [] }; phone.scroll = 0;
+    return ['msg:open', name];
+  }
   if (d.a === 'dl') download(phone.view);
   if (d.a === 'del') { const l = loadPhotos(); l.splice(phone.view, 1); savePhotos(l); phone.view = -1; }
   return null;

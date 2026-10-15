@@ -17,7 +17,7 @@ export function checkPassword(pass, hash, salt) {
 }
 
 // Fields kept as JSON in the `data` column (everything that is nested).
-const DATA = ['owned', 'outfit', 'presets', 'stocks', 'history'];
+const DATA = ['owned', 'outfit', 'presets', 'stocks', 'history', 'daily'];
 
 export function openDb(file) {
   const db = new DatabaseSync(file);
@@ -29,6 +29,9 @@ export function openDb(file) {
       color TEXT, data TEXT NOT NULL DEFAULT '{}');
     CREATE TABLE IF NOT EXISTS sessions (token_hash TEXT PRIMARY KEY, player_id INTEGER NOT NULL, expires INTEGER NOT NULL);
     CREATE TABLE IF NOT EXISTS market (id TEXT PRIMARY KEY, price REAL NOT NULL, hist TEXT NOT NULL);
+    CREATE TABLE IF NOT EXISTS messages (id INTEGER PRIMARY KEY, from_id INTEGER NOT NULL, to_id INTEGER NOT NULL,
+      text TEXT NOT NULL, at INTEGER NOT NULL, read INTEGER NOT NULL DEFAULT 0);
+    CREATE INDEX IF NOT EXISTS messages_pair ON messages (from_id, to_id, at);
   `);
   const st = {
     byName: db.prepare('SELECT * FROM players WHERE name = ?'),
@@ -43,6 +46,15 @@ export function openDb(file) {
     dropSession: db.prepare('DELETE FROM sessions WHERE token_hash = ?'),
     purge: db.prepare('DELETE FROM sessions WHERE expires <= ?'),
     market: db.prepare('SELECT * FROM market'),
+    sendMsg: db.prepare('INSERT INTO messages (from_id, to_id, text, at) VALUES (?, ?, ?, ?)'),
+    convo: db.prepare(`SELECT m.text, m.at, m.from_id = ? AS mine FROM messages m
+      WHERE (m.from_id = ? AND m.to_id = ?) OR (m.from_id = ? AND m.to_id = ?) ORDER BY m.at DESC, m.id DESC LIMIT 50`),
+    markRead: db.prepare('UPDATE messages SET read = 1 WHERE to_id = ? AND from_id = ?'),
+    contacts: db.prepare(`SELECT p.name, x.text, x.at, (SELECT COUNT(*) FROM messages u WHERE u.to_id = ? AND u.from_id = p.id AND u.read = 0) AS unread
+      FROM (SELECT CASE WHEN from_id = ? THEN to_id ELSE from_id END AS other, text, at, id FROM messages WHERE from_id = ? OR to_id = ?) x
+      JOIN players p ON p.id = x.other
+      WHERE x.id = (SELECT MAX(id) FROM messages y WHERE (y.from_id = ? AND y.to_id = x.other) OR (y.from_id = x.other AND y.to_id = ?))
+      ORDER BY x.at DESC, x.id DESC`),
     saveMarket: db.prepare('INSERT INTO market (id, price, hist) VALUES (?, ?, ?) ON CONFLICT(id) DO UPDATE SET price = excluded.price, hist = excluded.hist'),
   };
   const toPlayer = r => {
@@ -103,6 +115,13 @@ export function openDb(file) {
       }
       return n;
     },
+    // Private messages (kept for offline players too).
+    sendMessage: (fromId, toId, text) => st.sendMsg.run(fromId, toId, text, Date.now()),
+    conversation(meId, otherId) {
+      st.markRead.run(meId, otherId);
+      return st.convo.all(meId, meId, otherId, otherId, meId).reverse().map(r => ({ text: r.text, at: r.at, mine: !!r.mine }));
+    },
+    contacts: meId => st.contacts.all(meId, meId, meId, meId, meId, meId).map(r => ({ name: r.name, text: r.text, at: r.at, unread: r.unread })),
     close: () => db.close(),
   };
   return api;

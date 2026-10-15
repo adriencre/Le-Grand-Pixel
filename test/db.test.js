@@ -54,3 +54,16 @@ test('old JSON saves are imported once, without passwords, and the market too', 
   assert.ok(fs.existsSync(chips + '.bak') && !fs.existsSync(chips));
   assert.equal(db.importJson(chips, market), 0, 'nothing imported twice');
 });
+
+test('private messages: conversation order, unread counts, contacts list', () => {
+  const db = openDb(':memory:');
+  const a = db.createPlayer('Ana', 'pass', '#fff'), b = db.createPlayer('Bob', 'pass', '#fff'), c = db.createPlayer('Cid', 'pass', '#fff');
+  db.sendMessage(a.id, b.id, 'salut');
+  db.sendMessage(b.id, a.id, 'yo');
+  db.sendMessage(a.id, b.id, 'poker ?');
+  db.sendMessage(c.id, b.id, 'pret ?');
+  assert.deepEqual(db.contacts(b.id).map(x => [x.name, x.text, x.unread]), [['Cid', 'pret ?', 1], ['Ana', 'poker ?', 2]]);
+  assert.deepEqual(db.conversation(b.id, a.id).map(m => [m.text, m.mine]), [['salut', false], ['yo', true], ['poker ?', false]]);
+  assert.equal(db.contacts(b.id).find(x => x.name === 'Ana').unread, 0, 'opening marks as read');
+  assert.equal(db.contacts(a.id).length, 1);
+});

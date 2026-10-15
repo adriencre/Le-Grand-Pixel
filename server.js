@@ -16,6 +16,7 @@ import { Slots } from './games/slots.js';
 import { Race } from './games/race.js';
 import { DRINKS, SOBER_PER_SEC, drunkAmount } from './public/drinks.js';
 import { openDb, checkPassword } from './db.js';
+import { claimDaily } from './games/daily.js';
 
 const PORT = process.env.PORT || 4321;
 const ROOT = path.resolve('public');
@@ -197,6 +198,10 @@ io.on('connection', socket => {
     for (const s of STOCKS) { const h = sv.stocks?.[s.id]; if (Number.isInteger(h?.n) && h.n > 0) p.stocks[s.id] = { n: h.n, cost: Math.max(0, h.cost | 0) }; }
     p.history = Array.isArray(sv.history) ? sv.history.slice(0, 20) : [];
     p.curve = [p.chips];
+    // Daily reward (common/rare cosmetics the player doesn't own can come out of the day-7 chest).
+    const chest = Object.values(ITEMS).filter(it => it.price > 0 && it.rarity <= 1 && !p.owned.includes(it.id)).map(it => it.id);
+    const daily = claimDaily(sv.daily, Date.now(), chest);
+    p.daily = daily ? daily.daily : sv.daily;
     players.set(p.id, p);
     socket.emit('auth:ok', { token });
     socket.emit('welcome', { id: p.id, x: p.x, y: p.y, zone: p.zone });
@@ -206,6 +211,14 @@ io.on('connection', socket => {
     socket.emit('race', games.race.view(null));
     socket.emit('top', top());
     sendMe();
+    socket.emit('msg:list', db.contacts(p.dbId));
+    if (daily) {
+      const r = daily.reward;
+      p.chips += r.chips;
+      if (r.item) { p.owned.push(r.item); sendMe(); }
+      log(p, `Bonus du jour ${r.day}/7`, r.chips);
+      socket.emit('daily', { ...r, streak: daily.daily.streak });
+    }
   }
 
   const sendMe = () => socket.emit('me', { owned: p.owned, outfit: p.outfit, presets: p.presets, color: p.color, vip: p.vip });
@@ -378,6 +391,24 @@ io.on('connection', socket => {
     const delta = trade(p, s.id, m.qty, market.prices[s.id]);
     if (delta === null) return;
     log(p, `Bourse : ${m.qty > 0 ? 'achat' : 'vente'} ${Math.abs(m.qty)} ${s.name}`, delta);
+  });
+
+  // ---------- private messages ----------
+  let lastMsg = 0;
+  socket.on('msg:send', m => {
+    if (!p || !m || Date.now() - lastMsg < 500) return;
+    const to = db.getPlayer(cleanName(m.to)), text = typeof m.text === 'string' ? m.text.trim().slice(0, 200) : '';
+    if (!to || !text || to.id === p.dbId) return;
+    lastMsg = Date.now();
+    db.sendMessage(p.dbId, to.id, text);
+    const o = [...players.values()].find(x => x.dbId === to.id);
+    if (o) { io.to(o.id).emit('msg', { from: p.name, text }); ring(o); }
+    socket.emit('msg:convo', { name: to.name, messages: db.conversation(p.dbId, to.id) });
+  });
+  socket.on('msg:list', () => p && socket.emit('msg:list', db.contacts(p.dbId)));
+  socket.on('msg:open', name => {
+    const o = p && db.getPlayer(cleanName(name));
+    if (o && o.id !== p.dbId) socket.emit('msg:convo', { name: o.name, messages: db.conversation(p.dbId, o.id) });
   });
 
   socket.on('phone', open => { if (p) p.phone = !!open; });
