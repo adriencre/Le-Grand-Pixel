@@ -1,0 +1,11 @@
+# TrueNAS SCALE (24.10+): Apps > Discover Apps > ⋮ > Install via YAML, paste this file.
+# Replace /mnt/tank/apps/grandpixel with your dataset (owned by the "apps" user, see DEPLOY-TRUENAS.md).
+services:
+  grandpixel:
+    image: ghcr.io/adriencre/le-grand-pixel:latest
+    user: "568:568" # TrueNAS "apps" user, so the game can write its database in the dataset
+    ports:
+      - "4321:4321"
+    volumes:
+      - /mnt/tank/apps/grandpixel:/app/data
+    restart: unless-stopped

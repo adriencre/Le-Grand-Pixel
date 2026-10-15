@@ -28,6 +28,10 @@ Ouvre `http://localhost:4321`. Tes potes sur le même Wi-Fi utilisent l'adresse 
 
 Chaque joueur a un compte (pseudo + mot de passe haché). Tout est sauvegardé dans une base SQLite, `data/casino.db` (SQLite intégré à Node, aucune installation).
 
+## Héberger sur un serveur (Docker / TrueNAS)
+
+Chaque push sur `main` publie l'image `ghcr.io/adriencre/le-grand-pixel:latest`. La base vit dans le volume `/app/data`. Guide pas à pas : [DEPLOY-TRUENAS.md](DEPLOY-TRUENAS.md). Test local : `docker compose up --build`.
+
 ## Contrôles
 
 ZQSD / flèches : bouger · E : interagir · Échap : se lever · Entrée : chat · 1-5 : emotes · M : musique · P : téléphone · B : décorer chez soi · L : se déconnecter

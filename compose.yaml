@@ -1,0 +1,10 @@
+# Local test: docker compose up --build  ->  http://localhost:4321
+services:
+  grandpixel:
+    build: .
+    image: ghcr.io/adriencre/le-grand-pixel:latest
+    ports:
+      - "4321:4321"
+    volumes:
+      - ./data:/app/data
+    restart: unless-stopped
