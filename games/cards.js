@@ -1,5 +1,8 @@
 import { randomInt } from 'node:crypto';
 
+// Called by every game when a round is settled with the chips the player had at risk (levels / XP).
+export const stakes = { on: null };
+
 export function shuffle(a) {
   for (let i = a.length - 1; i > 0; i--) { const j = randomInt(i + 1); [a[i], a[j]] = [a[j], a[i]]; }
   return a;

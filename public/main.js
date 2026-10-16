@@ -7,6 +7,7 @@ import { phone, openPhone, notify, drawPhone, phoneClick, insidePhone, phoneScro
 import { rec, drawReception, recHover, recClick, recBar } from './reception.js';
 import { drawStreet, nearbyStreet, streetState, tipFx, floatAt } from './street.js';
 import { busk, startBusk, stopBusk, updateBusk, hitBusk, drawBusk } from './busk.js';
+import { night, onNight, onCop, nightNote, nightActors, nightPrompt, nightKey, drawNightWorld, drawNight, sceneFill } from './night.js';
 import { job, onJob, stopJob, updateJob, jobKey, drawJob, drawJobWorld, jobBar } from './jobs.js';
 import { drawWorld, move, nearby } from './world.js';
 import { drawTable, tableBar, onView, rouletteHit, raceHit, sceneBackdrop, emotes, outfits, SW, SH } from './tables.js';
@@ -17,6 +18,9 @@ import { aptDims, aptSolids } from './furniture.js';
 import { deco, drawApt, nearbyApt, decoBar, decoHover, decoClick } from './apartment.js';
 import { nearElevatorApt, LW, LH, CONCIERGE, nearJobBoard, nearStreetBouncer } from './map.js';
 import { drawLobby, nearbyLobby } from './lobby.js';
+import { RPS, RPS_ICON } from './rps.js';
+import { pass, togglePass, passKey, drawPass } from './pass.js';
+import { rankColor } from './levels.js';
 import { fshop, drawFurnShop, openFurnShop, furnShopHover, furnShopClick, furnShopBar, furnCelebrate } from './furnshop.js';
 import { barUi, drawBarScreen, barHover, barClick, served, barBar } from './bar.js';
 import { drunkLevel } from './drinks.js';
@@ -58,6 +62,13 @@ let myApt = null, lobbySay = null, apt = null, resList = null, sleptAt = -1e9, l
 let phoneVisible = false, elevatorAt = -1e9, casinoSay = null, market = null, bankState = {};
 const [sceneCopy, sceneX] = canvas(SW, SH); // last world frame without HUD/phone, for photos
 let kickedAt = -1e9;
+let xp = null, lvlUp = null, xpBox = null; // { level, into, next, max, bonus }, the last level-up (banner), the HUD box (click)
+const rps = { on: false, invite: null }; // rock-paper-scissors duel: am I playing, who challenged me
+const duelFoe = () => !seated && players.find(p => p.id !== meId && (p.zone || 'casino') === me.zone && !p.seat && !p.busking && Math.hypot(p.x - me.x, p.y - me.y) < 40);
+const duelHint = n => { // the E prompt wins, otherwise offer a duel to the player next to me
+  const o = n ? null : !rps.on && duelFoe();
+  return n ? [n] : o ? [{ x: o.x, y: o.y - 52, text: (rps.invite?.from === o.id ? 'F : ACCEPTER LE DUEL DE ' : 'F : DEFIER ') + o.name }] : [];
+};
 let players = [];
 const disp = new Map(), bubbles = new Map();
 let race = null, top = [];
@@ -154,6 +165,15 @@ socket.on('busk', on => {
   if (on) { startBusk(performance.now()); musicVolume(0); }
   else { stopBusk(); musicVolume(me.zone === 'street' ? 0.08 : 0.35); }
 });
+socket.on('cop', onCop);
+socket.on('night', m => {
+  const was = night.mode, end = onNight(m, performance.now());
+  if (end) sys(end);
+  if (m.result) m.result.fine !== undefined ? sfx.slam() : sfx.win(m.result.paid);
+  if (m.escaped) sfx.coin();
+  if (m.busted && was !== 'busted') sfx.miss();
+  if ((m.mode === 'scene') !== (was === 'scene')) musicVolume(m.mode === 'scene' ? 0 : 0.08);
+});
 socket.on('job', m => {
   if (!m || m.end) { stopJob(); if (m?.end) sys(m.end); return; }
   if ('ok' in m) m.ok ? sfx.coin() : sfx.miss();
@@ -165,6 +185,21 @@ socket.on('tip', m => {
   if (m.to !== meId) return;
   sfx.coin(); busk.earned += m.amt;
   if (m.by) sys(`${m.by} te donne ${m.amt} jetons !`);
+});
+socket.on('xp', m => { xp = m; });
+socket.on('levelup', m => {
+  lvlUp = { ...m, at: performance.now() };
+  celebrate(); if (m.chest || m.item) celebrate(); sfx.win(m.chips * 10);
+  sys(`⭐ NIVEAU ${m.level} ! ${m.chest ? 'Coffre : ' : ''}+${m.chips.toLocaleString('fr-FR')} jetons` + (m.item ? ` et ${ITEMS[m.item].name} !` : '') + (m.rank ? ` Nouveau rang : ${m.rank} !` : ''));
+});
+socket.on('rps', m => {
+  if (m.invite) { rps.invite = { ...m.invite, until: performance.now() + 20000 }; sfx.pop(); sys(`⚔️ ${m.invite.name} te defie a pierre-feuille-ciseaux pour ${m.invite.amount} jetons : F pres de lui pour accepter.`); }
+  if (m.start) { rps.on = true; rps.invite = null; sys(`Duel contre ${m.start.name} (${m.start.amount} jetons) : 1 PIERRE, 2 FEUILLE, 3 CISEAUX (15 s)`); }
+  if ('result' in m) {
+    sys(`${RPS_ICON[m.you]} contre ${RPS_ICON[m.them]} : ` + (m.result > 0 ? `gagne ! +${m.amount}` : m.result < 0 ? `perdu... -${m.amount}` : 'egalite, rejoue ! 1 / 2 / 3'));
+    if (m.result) { rps.on = false; m.result > 0 ? sfx.win(m.amount) : sfx.miss(); }
+  }
+  if (m.end) { rps.on = false; sys(m.end); }
 });
 socket.on('loot', l => {
   floatAt(me.x, me.y - 30, l.item ? 'TROUVAILLE !' : l.chips ? '+' + l.chips : '...');
@@ -282,6 +317,15 @@ function setZone(z) {
 }
 const emitNote = q => socket.emit('busk', { a: 'note', q });
 const emitAnswer = v => socket.emit('job', { a: 'answer', v });
+const emitNight = m => socket.emit('night', m), sceneNote = q => nightNote(q, emitNight);
+// The night work is 18+ content: ask once per browser, nothing starts without a yes.
+function adultOk() {
+  try { if (localStorage.getItem('adulte') === '1') return true; } catch {}
+  for (const k in keys) keys[k] = false; // the dialog swallows the key-up
+  if (!confirm('Contenu pour adultes (18+) : activité de nuit suggérée, rien d\'explicite.\nAs-tu 18 ans ou plus ?')) return false;
+  try { localStorage.setItem('adulte', '1'); } catch {}
+  return true;
+}
 const LANES = { ArrowLeft: 0, KeyA: 0, ArrowDown: 1, KeyS: 1, ArrowUp: 2, KeyW: 2, ArrowRight: 3, KeyD: 3 };
 function openShop() {
   if (phone.open) togglePhone();
@@ -321,10 +365,20 @@ addEventListener('keydown', e => {
   if (e.target.tagName === 'INPUT') return;
   if (tour.on) { if (['Enter', 'Space'].includes(e.code)) advanceTour(performance.now()); else if (e.code === 'Escape') endTour(); e.preventDefault(); return; }
   if (rules.key) { rulesKey(e.code); e.preventDefault(); return; }
+  if (pass.open) { passKey(e.code); e.preventDefault(); return; }
   if (daily.show) { if (['Enter', 'Escape', 'Space'].includes(e.code)) dismissDaily(); return; }
   if (e.code === 'KeyH') { // the guide of what you're doing right now
-    const k = table ? table.type : busk.on ? 'busk' : job.on ? job.kind : phone.open && phone.app === 'stocks' ? 'stocks' : null;
+    const k = table ? table.type : night.on ? 'trottoir' : busk.on ? 'busk' : job.on ? job.kind : phone.open && phone.app === 'stocks' ? 'stocks' : null;
     if (k) return showRules(k);
+  }
+  if (night.on) { // working the street: the motel scene plays like the guitar, haggling has its own keys, Escape ends the night
+    if (night.mode === 'scene') {
+      if (e.code in LANES && !e.repeat) { hitBusk(LANES[e.code], performance.now(), sceneNote); e.preventDefault(); }
+      if (e.code === 'Escape') emitNight({ a: 'stop' });
+      return;
+    }
+    if (nightKey(e.code, emitNight)) { e.preventDefault(); return; }
+    if (e.code === 'Escape') return emitNight({ a: 'stop' });
   }
   if (busk.on) { // playing guitar: arrows are notes, E / Escape stops
     if (e.code in LANES && !e.repeat) { hitBusk(LANES[e.code], performance.now(), emitNote); e.preventDefault(); }
@@ -350,6 +404,16 @@ addEventListener('keydown', e => {
   else if (e.code === 'Escape' && uiOpen()) closeShop();
   else if (e.code === 'Escape' && seated) socket.emit('stand');
   if (e.code === 'Space' && table?.type === 'slots') { spin(); e.preventDefault(); }
+  if (rps.on && /^Digit[1-3]$/.test(e.code)) { socket.emit('rps', { a: 'pick', k: +e.code[5] - 1 }); return sys('Tu joues ' + RPS[+e.code[5] - 1] + '...'); }
+  if (e.code === 'KeyF' && !rps.on && !uiOpen() && !phone.open) {
+    const o = duelFoe();
+    if (o && rps.invite?.from === o.id && rps.invite.until > performance.now()) socket.emit('rps', { a: 'accept', to: o.id });
+    else if (o) {
+      for (const k in keys) keys[k] = false; // the prompt swallows the key releases
+      const amt = parseInt(prompt(`Mise contre ${o.name} a pierre-feuille-ciseaux ?`, '100'), 10);
+      if (amt > 0) socket.emit('rps', { a: 'ask', to: o.id, amount: amt });
+    }
+  }
   if (/^Digit[1-5]$/.test(e.code)) socket.emit('emote', +e.code[5] - 1);
   if (e.code === 'KeyL' && confirm('Se déconnecter du Grand Pixel ?')) {
     socket.emit('logout', savedToken());
@@ -357,9 +421,13 @@ addEventListener('keydown', e => {
     return location.reload();
   }
   if (e.code === 'KeyM') sys(toggleMusic() ? 'Musique : on' : 'Musique : off');
+  if (e.code === 'KeyN' && xp && !uiOpen() && !phone.open) togglePass(xp.level);
   if (e.code === 'KeyE' && me.zone === 'street') {
-    const n = nearbyStreet({ ...me, id: meId }, players.filter(p => p.zone === 'street'));
-    if (n?.kind === 'door') socket.emit('door');
+    const nn = nightPrompt(me), n = nn ? null : nearbyStreet({ ...me, id: meId }, players.filter(p => p.zone === 'street'));
+    if (nn?.a === 'start') { if (adultOk()) firstTime('trottoir', () => emitNight({ a: 'start' })); }
+    else if (nn?.a === 'pimp') night.pimpTalk = true;
+    else if (nn) emitNight({ a: nn.a, id: nn.id });
+    else if (n?.kind === 'door') socket.emit('door');
     else if (n?.kind === 'busk') firstTime('busk', () => socket.emit('busk', { a: 'start' }));
     else if (n?.kind === 'shark') socket.emit('shark');
     else if (n?.kind === 'jobs') jobList = ['videur', 'menage'];
@@ -403,6 +471,8 @@ cv.addEventListener('click', e => {
   const mx = e.clientX * dpr / scale - ui.ox, my = e.clientY * dpr / scale - ui.oy;
   if (tour.on) return advanceTour(performance.now());
   if (rules.key) return rulesClick();
+  if (pass.open) { pass.open = false; return; }
+  if (xpBox && !tour.on && mx + ui.ox >= xpBox[0] && mx + ui.ox < xpBox[0] + xpBox[2] && my + ui.oy >= 6 && my + ui.oy < 22) return togglePass(xp.level);
   if (daily.show) return dismissDaily();
   if (phone.open && insidePhone(mx, my)) { const act = phoneClick(mx, my, phoneState(), performance.now()); if (act) socket.emit(...act); if (phone.app === 'stocks') firstTime('stocks'); }
   else if (deco.on && apt) { const act = decoClick(apt, mx + lastCam.x, my + lastCam.y); sfx.click(); if (act) socket.emit('apt:edit', act); }
@@ -430,7 +500,7 @@ function frame(now) {
   const dt = Math.min(0.05, (now - last) / 1000); last = now;
   updateTour(dt, now);
   document.body.classList.toggle('touring', tour.on || !!rules.key); // hide the message log under the tour and the guides
-  if (meId && !tour.on && !seated && !uiOpen() && !busk.on && !(job.on && job.kind !== 'menage') && document.activeElement !== chat) move(me, keys, dt, me.drunk, me.zone, me.vip, apt && aptSolids(apt));
+  if (meId && !tour.on && !seated && !uiOpen() && !busk.on && !(job.on && job.kind !== 'menage') && !['talk', 'scene'].includes(night.mode) && !night.pimpTalk && document.activeElement !== chat) move(me, keys, dt, me.drunk, me.zone, me.vip, apt && aptSolids(apt));
   if (meId && !seated && now - lastSend > 66) {
     const m = { x: Math.round(me.x * 10) / 10, y: Math.round(me.y * 10) / 10, dir: me.dir, moving: me.moving }, s = JSON.stringify(m);
     if (s !== sent) { socket.emit('move', m); sent = s; }
@@ -487,29 +557,32 @@ function frame(now) {
     };
     if (inApt && deco.on) cam.y = mh > buf.height * 0.6 ? Math.round(Math.max(-8, Math.min(mh - buf.height * 0.6, focus.y - buf.height * 0.3))) : -8; // keep the room above the decorating bar
     if (me.zone === 'street') {
-      const n = nearbyStreet({ ...me, id: meId, busking: busk.on }, list);
-      drawStreet(bx, cam, now, list, meId, n ? [n] : []);
-      updateBusk(now, emitNote);
-      drawBusk(bx, buf.width, buf.height, now, me.hype);
+      const n = (meId && !tour.on && nightPrompt(me)) || nearbyStreet({ ...me, id: meId, busking: busk.on }, list), scene = night.mode === 'scene';
+      streetState.scene = list.some(p => p.scene); // someone is at the hotel: its window lights up for everyone
+      drawStreet(bx, cam, now, list.filter(p => !p.scene).concat(nightActors(now)), meId, duelHint(n));
+      drawNightWorld(bx, cam, now, me);
+      updateBusk(now, scene ? sceneNote : emitNote);
+      drawBusk(bx, buf.width, buf.height, now, scene ? sceneFill() : me.hype, scene ? 'LA NUIT' : undefined, scene ? 'SATISFACTION ' + Math.round(sceneFill() * 100) + '%' : undefined);
     } else if (inApt) {
       const n = deco.on ? null : nearbyApt(me, apt);
       drawApt(bx, cam, now, list, meId, n ? [n] : [], apt);
     } else if (me.zone.startsWith('apt:')) { // waiting for the apartment layout
     } else if (me.zone === 'lobby') {
       const n = nearbyLobby(me);
-      drawLobby(bx, cam, now, list, meId, n ? [n] : []);
+      drawLobby(bx, cam, now, list, meId, duelHint(n));
       if (lobbySay && now - lobbySay.at < 5000) label(bx, lobbySay.text, CONCIERGE.x - cam.x + 60, CONCIERGE.y - 44 - cam.y, '#ffe680', 'rgba(20,30,20,.92)');
     } else if (me.zone === 'vip') {
       const n = nearby(me, list, 'vip');
-      drawVip(bx, cam, now, list, meId, n ? [n] : [], me.vip);
+      drawVip(bx, cam, now, list, meId, duelHint(n), me.vip);
     } else {
       const n = meId && !tour.on ? nearby(me, list) : null;
-      drawWorld(bx, cam, now, list, meId, n ? [n] : [], race, top, jackpotPot);
+      drawWorld(bx, cam, now, list, meId, meId && !tour.on ? duelHint(n) : [], race, top, jackpotPot);
       if (casinoSay && now - casinoSay.at < 4000) label(bx, casinoSay.text, VIP_BOUNCER.x - cam.x, VIP_BOUNCER.y - 40 - cam.y, '#ff8080', 'rgba(20,0,0,.9)');
     }
     drawJobWorld(bx, cam, now);
     updateJob(now, emitAnswer);
     drawJob(bx, buf.width, buf.height, now, me);
+    drawNight(bx, buf.width, buf.height, now);
     if (phone.open) {
       if (sceneCopy.width !== buf.width || sceneCopy.height !== buf.height) { sceneCopy.width = buf.width; sceneCopy.height = buf.height; }
       sceneX.drawImage(buf, 0, 0);
@@ -533,6 +606,7 @@ function frame(now) {
     if (el > 500 && el < 2000) text(bx, 'Z z z . . .', buf.width / 2, buf.height / 2, '#c8c0e8', 2, 'center');
   }
   drawDaily(bx, buf.width, buf.height, now);
+  drawPass(bx, buf.width, buf.height, now, { outfit: wardrobe.outfit || {}, color: me.color }, xp);
   drawRules(bx, buf.width, buf.height, now);
   if (tour.on) drawTourUi(bx, buf.width, buf.height, now, lastCam);
   if (now - elevatorAt < 2200) elevatorScreen(now - elevatorAt);
@@ -550,7 +624,7 @@ function frame(now) {
     ctx.drawImage(buf, -W / 2 + Math.sin(t * 2.1) * d * 16 * dpr, -H / 2 + Math.cos(t * 1.1) * d * 4 * dpr, W, H);
     ctx.restore();
   } else ctx.drawImage(buf, 0, 0, W, H);
-  if (showPhone && !rules.key) drawPhone(ctx, buf.width, buf.height, now, phoneState(), scale); // full resolution, readable text
+  if (showPhone && !rules.key && !pass.open) drawPhone(ctx, buf.width, buf.height, now, phoneState(), scale); // full resolution, readable text
   requestAnimationFrame(frame);
 }
 
@@ -605,6 +679,20 @@ function hud() {
     bx.fillStyle = '#e8c860'; bx.fillRect(cx + 2, 11, 4, 3);
     if (sh < 18) { bx.fillStyle = 'rgba(255,255,255,.7)'; bx.fillRect(cx + sh, 8, 1, 12); }
   }
+  if (xp) { // level and progress to the next one
+    const lx = 28 + String(me.chips).length * 8 + (me.vip ? 22 : 0), bw = 70, now = performance.now();
+    xpBox = [lx, 6, bw + 6];
+    bx.fillStyle = 'rgba(10,4,16,.8)'; bx.fillRect(lx, 6, bw + 6, 16);
+    text(bx, 'NIV ' + xp.level, lx + 3, 8, rankColor(xp.level, now));
+    text(bx, xp.bonus > 0 ? 'XP X2' : 'N', lx + bw + 3, 8, xp.bonus > 0 ? (Math.floor(now / 400) % 2 ? '#ffe060' : '#ffb030') : '#6a6080', 1, 'right');
+    bx.fillStyle = '#2a2040'; bx.fillRect(lx + 3, 16, bw, 3);
+    bx.fillStyle = '#60ff80'; bx.fillRect(lx + 3, 16, xp.max ? bw : Math.round(bw * xp.into / xp.next), 3);
+  }
+  if (lvlUp && performance.now() - lvlUp.at < 3500) {
+    text(bx, `NIVEAU ${lvlUp.level} !`, buf.width / 2, 40, Math.floor(performance.now() / 150) % 2 ? '#ffe060' : '#fff', 2, 'center', '#000');
+    text(bx, (lvlUp.chest ? 'COFFRE ! ' : '') + `+${lvlUp.chips.toLocaleString('fr-FR')} JETONS` + (lvlUp.item ? ' + ' + ITEMS[lvlUp.item].name : ''), buf.width / 2, 58, '#60ff80', 1, 'center', '#000');
+    if (lvlUp.rank) text(bx, 'NOUVEAU RANG : ' + lvlUp.rank, buf.width / 2, 68, rankColor(lvlUp.level, performance.now()), 1, 'center', '#000');
+  }
   if (me.drunk > 0.05) {
     const lv = drunkLevel(me.drunk);
     bx.fillStyle = 'rgba(10,4,16,.8)'; bx.fillRect(6, 24, 70, 11);
@@ -622,7 +710,7 @@ function hud() {
   }
   const online = players.length + (players.length > 1 ? ' JOUEURS' : ' JOUEUR');
   text(bx, online, buf.width - 6, 9, '#80f0ff', 1, 'right', '#000');
-  if (!FILM && performance.now() - joinedAt < 30000) text(bx, 'ZQSD: BOUGER  E: INTERAGIR  ENTREE: CHAT  1-5: EMOTES  M: MUSIQUE  P: TELEPHONE', buf.width / 2, 26, 'rgba(255,255,255,.55)', 1, 'center', '#000');
+  if (!FILM && performance.now() - joinedAt < 30000) text(bx, 'ZQSD: BOUGER  E: INTERAGIR  ENTREE: CHAT  1-5: EMOTES  N: NIVEAUX  M: MUSIQUE  P: TELEPHONE', buf.width / 2, 26, 'rgba(255,255,255,.55)', 1, 'center', '#000');
 }
 
 requestAnimationFrame(frame);

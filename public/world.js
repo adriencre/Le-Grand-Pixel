@@ -2,6 +2,7 @@ import { T, MW, MH, CASINO_TABLES as TABLES, VIP_TABLES, TIERS, VIP_ELEVATOR, VI
 import { drawAvatar } from './avatar.js';
 import { NPC_OUTFITS, FEATURED } from './items.js';
 import { raceProgress, raceElapsed } from './race.js';
+import { rankColor } from './levels.js';
 import { canvas, text, textW, grid, label, tableSprite, shapes, chairSprite, plantSprite, pillarSprite, drawSlotMachine, chipStack, drawEmote } from './sprites.js';
 
 // ---------- static background (floor, walls, rug, bar), rendered once ----------
@@ -272,9 +273,13 @@ function star(col) {
 export function overheads(x, players, now, meId) {
   for (const p of players) {
     if (p.drunk > 0.35 && (now / 2600 + p.x / 50) % 3 < 0.3) text(x, 'HIC !', p.x + 8, p.y - 30 - ((now / 2600 + p.x / 50) % 3) * 20, '#ffe680', 1, 'left', '#000');
-    label(x, p.name, p.x, p.y - 36, p.id === meId ? '#ffe680' : '#fff');
+    const name = p.name && p.lvl > 1 ? p.lvl + ' ' + p.name : p.name; // level in front of the name, in its rank color
+    if (name) {
+      label(x, name, p.x, p.y - 36, p.id === meId ? '#ffe680' : '#fff'); // street clients have none
+      if (p.lvl > 1) text(x, String(p.lvl), Math.round(p.x - textW(name) / 2), p.y - 34, rankColor(p.lvl, now));
+    }
     if (p.vip) { // member star, the Diamant one twinkles
-      const tier = TIERS[p.vip], sx = Math.round(p.x - textW(p.name) / 2 - 9), sy = p.y - 34;
+      const tier = TIERS[p.vip], sx = Math.round(p.x - textW(name) / 2 - 9), sy = p.y - 34;
       x.fillStyle = 'rgba(10,6,20,.75)'; x.fillRect(sx - 1, sy - 2, 7, 9);
       x.drawImage(star(p.vip === 3 && Math.floor(now / 250) % 3 === 0 ? '#ffffff' : tier.color), sx, sy);
     }

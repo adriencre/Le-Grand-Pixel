@@ -16,4 +16,12 @@ export const ACHIEVEMENTS = {
   penthouse: ['PENTHOUSE', 'AVOIR LE PENTHOUSE'],
   collection: ['COLLECTIONNEUR', '30 MEUBLES DIFFERENTS'],
   bosseur: ['BOSSEUR', 'PLAFOND DES BOULOTS'],
+  nuit: ['OISEAU DE NUIT', 'PREMIER CLIENT'],
+  habitue: ['HABITUE', 'UN CLIENT REVIENT'],
+  insaisissable: ['INSAISISSABLE', 'SEMER LA POLICE'],
+  star: ['STAR DE LA NUIT', 'REPUTATION 60'],
+  duelliste: ['DUELLISTE', 'GAGNER UN DUEL'],
+  niveau10: ['VETERAN', 'ATTEINDRE LE NIVEAU 10'],
+  niveau100: ['CENTURION', 'ATTEINDRE LE NIVEAU 100'],
+  legende: ['LEGENDE', 'ATTEINDRE LE NIVEAU 1000'],
 };

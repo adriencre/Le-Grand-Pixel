@@ -1,4 +1,5 @@
 import { randomInt } from 'node:crypto';
+import { stakes } from './cards.js';
 
 export const SYMS = ['cherry', 'lemon', 'bell', 'bar', 'seven', 'diamond'];
 export const WEIGHTS = [6, 5, 4, 3, 2, 1];
@@ -42,6 +43,7 @@ export class Slots {
   act(p, m) {
     if (this.seats[0]?.p !== p || this.spinning || m.a !== 'spin' || !Number.isInteger(m.bet) || m.bet < BETS[0] || m.bet > BETS.at(-1) * 3 || p.chips < m.bet) return;
     p.chips -= m.bet;
+    stakes.on?.(p, m.bet);
     jackpot.pot += Math.ceil(m.bet / 100);
     this.bet = m.bet;
     this.reels = [roll(), roll(), roll()];

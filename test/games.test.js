@@ -3,7 +3,12 @@ import assert from 'node:assert/strict';
 import { score, settle } from '../games/blackjack.js';
 import { best, cmp, distribute, eval5, Poker } from '../games/poker.js';
 import { payout } from '../games/roulette.js';
-import { slotPay, WEIGHTS, PAY3 } from '../games/slots.js';
+import { slotPay, WEIGHTS, PAY3, Slots } from '../games/slots.js';
+import { beats } from '../public/rps.js';
+import { MAX, TRACK, JACKPOTS, levelOf, need, rewardsOf, stakeXp } from '../public/levels.js';
+import { ITEMS } from '../public/items.js';
+import { FINDS } from '../games/street.js';
+import { stakes } from '../games/cards.js';
 
 test('blackjack score and payouts', () => {
   assert.equal(score(['As', 'Kd']), 21);
@@ -83,9 +88,9 @@ test('horse race odds keep a house edge and order is a full permutation', async 
 });
 
 test('cosmetic catalog is consistent', async () => {
-  const { ITEMS, SLOTS, BY_SLOT, RARITY, defaultOutfit } = await import('../public/items.js');
+  const { ITEMS, SLOTS, BY_SLOT, XP_ITEMS, RARITY, defaultOutfit } = await import('../public/items.js');
   const all = Object.values(ITEMS);
-  assert.equal(all.length, SLOTS.reduce((a, s) => a + BY_SLOT[s].length, 0));
+  assert.equal(all.length, SLOTS.reduce((a, s) => a + BY_SLOT[s].length, XP_ITEMS.length));
   for (const it of all) {
     assert.ok(SLOTS.includes(it.slot) && RARITY[it.rarity] && Number.isInteger(it.price) && it.price >= -1, it.id);
     assert.ok(BY_SLOT[it.slot].length <= 10, 'a shop page holds 10 cards');
@@ -282,4 +287,78 @@ test('small jobs: right answers pay, wrong ones do not, cap holds', async () => 
   assert.equal(capLeft(rec, 1000), 0);
   assert.equal(capLeft(rec, 3600001 + 1000), CAP); // new hour
   assert.ok(Object.values(JOBS).every(j => j.pay >= 15 && j.pay <= 25));
+});
+
+test('la nuit: haggling, the cop, the motel payout', async () => {
+  const { spawnClient, negotiate, limitOf, copSees, copRange, sceneResult, cleanNight, ARCHS } = await import('../games/night.js');
+  const seq = (...v) => () => (v.length ? v.shift() : 0.5);
+  const rec = { rep: 0, regulars: [], total: 0, pimp: null };
+  for (let i = 0; i < 100; i++) assert.ok(ARCHS[spawnClient(rec, Math.random, 0, i).arch][4] === 0); // only cheap clients at rep 0
+  const c = { arch: 0, budget: 100, mood: 50, patience: 3, counter: 0 };
+  assert.equal(limitOf(c), 90);
+  assert.equal(negotiate({ ...c }, 2, 90, 0, Math.random).deal, 90);
+  const d = { ...c }, r = negotiate(d, 2, 200, 0, Math.random);
+  assert.ok(!r.deal && d.counter > 0 && d.mood < 50 && d.patience === 2);
+  assert.equal(negotiate(d, 3, 0, 0, Math.random).deal, d.counter);
+  const e = { ...c, patience: 1 };
+  assert.ok(negotiate(e, 1, 0, 0, seq(0.9)).gone); // last bit of patience used
+  assert.ok(negotiate({ ...c }, 4, 0, 0, Math.random).gone);
+  const cop = { x: 100, y: 150, dir: 1 };
+  assert.ok(copSees(cop, { x: 150, y: 150 }, false));
+  assert.ok(!copSees(cop, { x: 50, y: 150 }, true)); // behind him
+  assert.ok(!copSees(cop, { x: 100 + copRange(false) + 10, y: 150 }, false) && copSees(cop, { x: 100 + copRange(false) + 10, y: 150 }, true));
+  const best = sceneResult(100, 1, null, Math.random);
+  assert.deepEqual([best.tip, best.pay, best.rep, best.regular], [50, 150, 4, true]);
+  assert.equal(sceneResult(100, 1, 'yes', Math.random).cut, 38);
+  assert.ok(sceneResult(100, 0.5, 'no', seq(0.1)).robbed);
+  assert.equal(sceneResult(100, 0.1, null, Math.random).rep, -3);
+  const reg = { ...rec, regulars: [{ name: 'GERARD', arch: 4, visits: 2 }] };
+  const g = spawnClient(reg, seq(0.1, 0), 0, 1);
+  assert.ok(g.name === 'GERARD' && g.regular === 2 && g.mood === 80);
+  assert.deepEqual(cleanNight({ rep: 500, regulars: [{ name: 'X', arch: 99 }], pimp: 'maybe' }), { rep: 100, total: 0, regulars: [], pimp: null });
+});
+
+test('rock paper scissors', () => {
+  // 0 rock, 1 paper, 2 scissors
+  assert.deepEqual([0, 1, 2].map(b => beats(0, b)), [0, -1, 1]);
+  assert.deepEqual([0, 1, 2].map(b => beats(1, b)), [1, 0, -1]);
+  assert.deepEqual([0, 1, 2].map(b => beats(2, b)), [-1, 1, 0]);
+});
+
+test('levels go to 1000 and stop there', () => {
+  assert.deepEqual(levelOf(0), { level: 1, into: 0, next: need(1) });
+  assert.deepEqual(levelOf(need(1) + need(2) + 5), { level: 3, into: 5, next: need(3) });
+  let total = 0;
+  for (let l = 1; l < MAX; l++) total += need(l);
+  assert.equal(levelOf(total - 1).level, MAX - 1);
+  assert.deepEqual(levelOf(total), { level: MAX, into: 0, next: 0, max: true });
+  assert.equal(levelOf(total * 3).level, MAX);
+});
+
+test('level pass rewards', () => {
+  for (const [l, id] of Object.entries(TRACK)) {
+    assert.ok(ITEMS[id], id);
+    assert.equal(ITEMS[id].price, -1, id + ' must not be for sale');
+    assert.ok(!FINDS.includes(id), id + ' must not be in the trash');
+    assert.equal(rewardsOf(+l).item, id);
+  }
+  assert.ok(rewardsOf(10).chest && rewardsOf(1000).chips >= 1000000 && rewardsOf(500).rank === 'MAITRE');
+  // from level 100, chips per XP stay under the roulette edge (else betting red + black at once makes money)
+  let chips = 0, xp = 0;
+  for (let l = 101; l <= MAX; l++) { chips += rewardsOf(l).chips - (JACKPOTS[l] || 0); xp += need(l - 1); }
+  assert.ok(chips / xp < 0.027, 'ratio ' + chips / xp);
+});
+
+test('a slot spin reports its stake for XP', () => {
+  const got = [];
+  stakes.on = (p, amt) => got.push(amt);
+  const g = new Slots(1, () => {}), p = { id: 'a', chips: 1000 };
+  g.sit(p);
+  g.act(p, { a: 'spin', bet: 50 });
+  stakes.on = null;
+  assert.deepEqual(got, [50]);
+});
+
+test('bet XP grows slowly and is capped', () => {
+  assert.deepEqual([10, 100, 500, 100000].map(stakeXp), [6, 20, 45, 50]);
 });

@@ -314,8 +314,45 @@ export function drawFx(ctx, fx, x, y, t, layer, trail) {
       ctx.fillStyle = ['#ffe060', '#80f0ff', '#ff80d0', '#fff'][k];
       ctx.fillRect(px - 1, py, 3, 1); ctx.fillRect(px, py - 1, 1, 3);
     }
+  } else if ((fx === 'goldaura' || fx === 'legend') && layer === 'back') { // level pass: a pulsing glow, gold or rainbow
+    const r = 16 + Math.sin(t / 250) * 3, hue = (t / 8) % 360, col = a => (fx === 'legend' ? `hsla(${hue},100%,65%,${a})` : `rgba(255,200,60,${a})`);
+    ctx.globalCompositeOperation = 'lighter';
+    const g = ctx.createRadialGradient(x, y - 11, 2, x, y - 11, r);
+    g.addColorStop(0, col(0.6)); g.addColorStop(1, col(0));
+    ctx.fillStyle = g; ctx.fillRect(x - r, y - 11 - r, r * 2, r * 2);
+    for (let k = 0; k < 10; k++) { // rays turning slowly
+      const a = t / 900 + k * Math.PI / 5, d = 12 + ((t / 60 + k * 3) % 6);
+      ctx.fillStyle = fx === 'legend' ? `hsl(${(hue + k * 36) % 360},100%,70%)` : '#ffe080';
+      ctx.fillRect(Math.round(x + Math.cos(a) * d), Math.round(y - 11 + Math.sin(a) * d), 1, 1);
+    }
+  } else if (fx === 'galaxy') { // three planets on tilted orbits, in front of or behind you
+    for (let k = 0; k < 3; k++) {
+      const a = t / (500 + k * 250) + k * 2.1, front = Math.sin(a) > 0;
+      if (front !== (layer === 'front')) continue;
+      const px = Math.round(x + Math.cos(a) * (10 + k * 3)), py = Math.round(y - 14 + k * 4 + Math.sin(a) * 3);
+      ctx.fillStyle = ['#ff8040', '#60c0ff', '#c070ff'][k]; ctx.fillRect(px - 1, py - 1, 3, 3);
+      if (k === 1) { ctx.fillStyle = '#e0f0ff'; ctx.fillRect(px - 3, py, 7, 1); } // ringed planet
+    }
+    if (layer === 'back') for (let k = 0; k < 8; k++) if ((t / 300 + k * 7) % 5 < 2.5) { ctx.fillStyle = '#fff'; ctx.fillRect(x - 13 + ((k * 11) % 27), y - 34 + ((k * 17) % 30), 1, 1); }
   } else if (layer === 'front') {
-    if (fx === 'sparkle') for (let k = 0; k < 6; k++) {
+    if (fx === 'lightning') for (let k = 0; k < 2; k++) { // bolts flash around you, sparks crackle in between
+      const n = Math.floor(t / 400) * 2 + k, ph = (t % 400) / 400, side = n % 2 ? 1 : -1;
+      ctx.fillStyle = '#a0f0ff'; ctx.fillRect(Math.round(x + side * (6 + (t / 70 + k * 5) % 4)), Math.round(y - 8 - ((t / 50 + k * 11) % 20)), 1, 1);
+      if (ph > 0.6 || (k && n % 3)) continue;
+      ctx.globalAlpha = 1 - ph / 0.6;
+      let bx = x + side * (8 + (n * 7) % 6), by = y - 36;
+      ctx.fillStyle = ph < 0.1 ? '#fff' : '#80e0ff';
+      for (let j = 0; j < 7; j++) { ctx.fillRect(Math.round(bx), by, 1, 4); bx += ((n * 13 + j * 5) % 3) - 1; by += 4; }
+    } else if (fx === 'chips') for (let k = 0; k < 5; k++) { // falling casino chips
+      const ph = (t / 2000 + k / 5) % 1, px = Math.round(x - 10 + ((k * 7) % 20) + Math.sin(t / 300 + k * 2) * 2), py = Math.round(y - 40 + ph * 38);
+      ctx.globalAlpha = ph < 0.8 ? 1 : (1 - ph) * 5;
+      ctx.fillStyle = ['#e02838', '#2a7af0', '#2fb36b', '#141418', '#e8b830'][k]; ctx.fillRect(px, py, 4, 4);
+      ctx.fillStyle = '#fff'; ctx.fillRect(px + 1, py, 2, 1); ctx.fillRect(px + 1, py + 3, 2, 1);
+    } else if (fx === 'legend') for (let k = 0; k < 8; k++) { // gold pixels rising like a fountain
+      const ph = (t / 1200 + k / 8) % 1, a = k * 0.785 + t / 1500;
+      ctx.globalAlpha = 1 - ph; ctx.fillStyle = k % 2 ? '#ffe060' : '#fff';
+      ctx.fillRect(Math.round(x + Math.cos(a) * (6 + ph * 6)), Math.round(y - 4 - ph * 34), ph < 0.5 ? 2 : 1, ph < 0.5 ? 2 : 1);
+    } else if (fx === 'sparkle') for (let k = 0; k < 6; k++) {
       const ph = (t / 1400 + k / 6) % 1, a = k * 1.047 + t / 1800;
       const px = Math.round(x + Math.cos(a) * 9), py = Math.round(y - 6 - ph * 20);
       ctx.globalAlpha = 1 - ph; ctx.fillStyle = k % 2 ? '#ffe060' : '#fff';

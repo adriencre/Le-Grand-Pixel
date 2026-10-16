@@ -1,4 +1,4 @@
-import { deck, validBet } from './cards.js';
+import { deck, validBet, stakes } from './cards.js';
 
 export function score(cards) {
   let t = 0, aces = 0;
@@ -145,6 +145,7 @@ export class Blackjack {
       if (!s?.bet || !s.cards.length) continue;
       const win = settle(s.cards, this.dealer, s.bet);
       s.p.chips += win;
+      stakes.on?.(s.p, s.bet);
       s.result = win > s.bet ? 'win' : win === s.bet ? 'push' : 'lose';
       s.gain = win - s.bet;
     }

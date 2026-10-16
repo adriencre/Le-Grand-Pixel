@@ -17,7 +17,7 @@ export function checkPassword(pass, hash, salt) {
 }
 
 // Fields kept as JSON in the `data` column (everything that is nested).
-const DATA = ['owned', 'outfit', 'presets', 'stocks', 'history', 'daily', 'achievements', 'loan', 'apt'];
+const DATA = ['owned', 'outfit', 'presets', 'stocks', 'history', 'daily', 'achievements', 'loan', 'apt', 'night', 'xp', 'xpDay'];
 
 export function openDb(file) {
   const db = new DatabaseSync(file);

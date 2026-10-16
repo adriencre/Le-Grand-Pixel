@@ -1,5 +1,5 @@
 // The street in front of the casino, at night: facade, sidewalk, road, passers-by, pigeons, trash cans.
-import { T, ST, BINS, BUSK, LAMPS, BENCH, HYDRANT, BOUNCER, SHARK, RES_DOOR, CASINO_W, RES_X, ENTRY_MIN, nearDoorOut, nearBusk, nearBin, nearShark, nearResDoor, nearStreetBouncer } from './map.js';
+import { T, ST, BINS, BUSK, LAMPS, BENCH, HYDRANT, BOUNCER, SHARK, RES_DOOR, CASINO_W, RES_X, ENTRY_MIN, nearDoorOut, nearBusk, nearBin, nearShark, nearResDoor, nearStreetBouncer} from './map.js';
 import { canvas, text, label, plantSprite } from './sprites.js';
 import { drawAvatar } from './avatar.js';
 import { BY_SLOT, NPC_OUTFITS, SKINS, HAIR_COLORS } from './items.js';
@@ -89,13 +89,15 @@ function background() {
   return (bg = c);
 }
 
-// The dark alley between the casino and the residence: drainpipe, dumpster, a sleeping cat.
+// The dark alley between the casino and the residence: drainpipe, and the seedy hotel's door and window.
+const MW_X = CW + 6, MW_Y = 40; // the hotel window (lit and shaking during a scene)
 function alley(x, px) {
   for (let y = 0; y < 6 * T; y++) for (let X = CW; X < RX; X++) px((y % 6 === 5 || (X + Math.floor(y / 6) * 5) % 10 === 0) ? '#100a10' : '#1c1420', X, y);
   px('#000', CW, 0, 2, 6 * T); px('#000', RX - 2, 0, 2, 6 * T);
-  px('#4a4a54', CW + 4, 0, 3, 6 * T); for (let y = 8; y < 6 * T; y += 22) px('#5a5a64', CW + 3, y, 5, 2); // drainpipe
-  px('#2a4a34', CW + 10, 74, 20, 20); px('#3a6a48', CW + 9, 72, 22, 4); px('#1a2a20', CW + 10, 84, 20, 1); // dumpster
-  px('#2a2a2a', CW + 18, 66, 8, 5); px('#2a2a2a', CW + 18, 64, 2, 2); px('#2a2a2a', CW + 24, 64, 2, 2); px('#2a2a2a', CW + 26, 69, 5, 1); // cat
+  px('#4a4a54', CW + 2, 0, 2, 6 * T); for (let y = 8; y < 6 * T; y += 22) px('#5a5a64', CW + 1, y, 4, 2); // drainpipe
+  px('#3a2030', MW_X - 2, MW_Y - 2, 24, 18); px('#120810', MW_X, MW_Y, 20, 14); px('#3a2030', MW_X + 9, MW_Y, 2, 14); // dark window
+  px('#3a2030', CW + 6, 64, 20, 32); px('#5a1a30', CW + 8, 66, 16, 30); px('#c8a040', CW + 20, 80, 2, 3); // door
+  px('#ff4ab0', CW + 8, 60, 16, 2); // pink lamp over the door
 }
 
 // The residence: cream stone, curtains, flower boxes, wrought-iron balconies, green door and awning.
@@ -135,6 +137,26 @@ function residence(x, px) {
   px('#2a4a8a', D - 30, 70, 9, 7); text(x, '42', D - 25, 71, '#fff', 1, 'center');
   px('#c8a040', D + 22, 68, 7, 12); for (let k = 0; k < 4; k++) px('#5a4020', D + 24, 70 + k * 2, 3, 1);
   for (const sx of [D - 44, D + 34]) { px('#7a7a82', sx, 84, 12, 12); px('#8a8a92', sx, 84, 12, 2); px('#2f8a3c', sx - 1, 74, 14, 11); px('#4cbc52', sx + 2, 75, 8, 4); }
+}
+
+// The hotel sign blinks at night; during a scene (anyone's) its window lights up, shadows move, hearts rise.
+function hotel(x, now, lit) {
+  const t = now / 1000, on = lit && Math.sin(t * 5) > -0.8;
+  'HOTEL'.split('').forEach((ch, i) => text(x, ch, CW + 16, 4 + i * 7, on ? '#ff8ad8' : '#5a2a40', 1, 'center'));
+  if (on) { x.save(); x.globalCompositeOperation = 'lighter'; x.fillStyle = 'rgba(255,60,170,.12)'; x.fillRect(CW + 8, 0, 16, 40); x.restore(); }
+  if (!streetState.scene) return;
+  const shake = Math.round(Math.sin(t * 22)), X = MW_X + shake;
+  x.fillStyle = '#ff6ab8'; x.fillRect(X, MW_Y, 20, 14);
+  x.fillStyle = '#ffb0d8'; x.fillRect(X + 1, MW_Y + 1, 18, 3);
+  x.fillStyle = '#5a1030'; // two shadows behind the curtain
+  const a = Math.round(Math.sin(t * 6) * 2), b = Math.round(Math.cos(t * 6) * 2);
+  x.fillRect(X + 4 + a, MW_Y + 4, 4, 10); x.fillRect(X + 4 + a, MW_Y + 2, 4, 3);
+  x.fillRect(X + 12 + b, MW_Y + 4, 4, 10); x.fillRect(X + 12 + b, MW_Y + 2, 4, 3);
+  x.fillStyle = '#3a2030'; x.fillRect(X + 9, MW_Y, 2, 14);
+  for (let k = 0; k < 3; k++) { // hearts drifting up
+    const ph = (t / 2 + k / 3) % 1;
+    x.globalAlpha = 1 - ph; text(x, '<3', X + 6 + Math.sin(ph * 8 + k) * 6, MW_Y - 4 - ph * 22, '#ff4ab0'); x.globalAlpha = 1;
+  }
 }
 
 // ---------- passers-by, pigeons, cars ----------
@@ -257,7 +279,7 @@ function ropes(x) {
 }
 
 // ---------- the scene ----------
-export const streetState = { bins: BINS.map(() => ({ until: 0, shakeUntil: 0 })), bouncerSay: null, sharkSay: null };
+export const streetState = { scene: false, bins: BINS.map(() => ({ until: 0, shakeUntil: 0 })), bouncerSay: null, sharkSay: null };
 export function floatAt(x, y, text) { coins.push({ text, x, y, t0: performance.now() }); }
 
 export function drawStreet(x, cam, now, players, meId, prompts) {
@@ -279,6 +301,7 @@ export function drawStreet(x, cam, now, players, meId, prompts) {
     x.fillStyle = `rgba(255,200,110,${0.6 * dark})`; x.fillRect(wx + 5, wy, 10, hh);
   }
   if (dark > 0.25) { x.fillStyle = '#fff0b0'; x.fillRect(RES_DOOR.x - 2, 58, 4, 2); } // lamp over the door
+  hotel(x, now, lit);
   // busking spot
   x.fillStyle = '#b08850'; x.fillRect(BUSK.x - 14, BUSK.y - 6, 28, 12);
   x.fillStyle = '#8a6838'; x.fillRect(BUSK.x - 14, BUSK.y + 4, 28, 2);

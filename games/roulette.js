@@ -1,5 +1,5 @@
 import { randomInt } from 'node:crypto';
-import { validBet } from './cards.js';
+import { validBet, stakes } from './cards.js';
 
 export const RED = new Set([1, 3, 5, 7, 9, 12, 14, 16, 18, 19, 21, 23, 25, 27, 30, 32, 34, 36]);
 
@@ -73,6 +73,7 @@ export class Roulette {
       for (const s of this.seats) if (s) {
         const back = s.bets.reduce((a, b) => a + payout(b, this.result), 0);
         s.p.chips += back;
+        stakes.on?.(s.p, s.bets.reduce((a, b) => a + b.a, 0));
         s.gain = back - s.bets.reduce((a, b) => a + b.a, 0);
       }
     }

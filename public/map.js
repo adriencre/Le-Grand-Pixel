@@ -127,6 +127,12 @@ export const nearResDoor = p => Math.abs(p.x - RES_DOOR.x) < 18 && p.y < 7.6 * T
 export const nearStreetBouncer = p => Math.abs(p.x - BOUNCER.x) < 14 && p.y < 7.6 * T;
 export const nearShark = p => Math.hypot(p.x - SHARK.x, p.y - SHARK.y) < 24;
 export const nearBusk = p => Math.hypot(p.x - BUSK.x, p.y - BUSK.y) < 20;
+export const CORNER = { x: 45 * T + 12, y: 10 * T }; // under the far street lamp, where the night work happens
+export const nearCorner = p => Math.hypot(p.x - CORNER.x, p.y - CORNER.y) < 20;
+export const MOTEL_DOOR = { x: 41 * T, y: 7 * T }; // the seedy hotel door in the alley
+export const nearMotel = p => Math.abs(p.x - MOTEL_DOOR.x) < 14 && p.y < 7.6 * T;
+export const PIMP = { x: 43 * T + 4, y: 6 * T + 10 }; // "Le Marquis", leaning on the residence wall
+export const nearPimp = p => Math.hypot(p.x - PIMP.x, p.y - PIMP.y) < 24;
 export const nearBin = p => BINS.findIndex(([x, y]) => Math.hypot(p.x - x * T, p.y - y * T - 6) < 22);
 
 // ---------- the VIP floor (upstairs) ----------

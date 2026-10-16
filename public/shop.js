@@ -1,16 +1,17 @@
 // The boutique / wardrobe screen: try on, buy, wear, save outfits. Drawn in a 480x270 space.
-import { ITEMS, BY_SLOT, RARITY, REMOVABLE, SKINS, HAIR_COLORS } from './items.js';
+import { ITEMS, BY_SLOT, XP_ITEMS, RARITY, REMOVABLE, SKINS, HAIR_COLORS } from './items.js';
 import { COLORS } from './map.js';
 import { drawAvatar } from './avatar.js';
 import { canvas, text, textW, grid, chipSprite } from './sprites.js';
 import { drawPhoneMini } from './phone.js';
 import { sfx } from './sfx.js';
+import { LEVEL_OF } from './levels.js';
 
 const SW = 480, SH = 270;
 export const TABS = [
   { slot: 'hat', name: 'CHAPEAUX' }, { slot: 'hair', name: 'COIFFURES' }, { slot: 'glasses', name: 'LUNETTES' },
   { slot: 'top', name: 'HAUTS' }, { slot: 'bottom', name: 'BAS' }, { slot: 'shoes', name: 'CHAUSSURES' },
-  { slot: 'acc', name: 'ACCESSOIRES' }, { slot: 'fx', name: 'EFFETS' }, { slot: 'phone', slots: ['phone', 'wallpaper', 'ringtone'], name: 'TELEPHONE' }, { slot: 'style', name: 'STYLE' }, { slot: 'wardrobe', name: 'MES TENUES' },
+  { slot: 'acc', name: 'ACCESSOIRES' }, { slot: 'fx', name: 'EFFETS' }, { slot: 'phone', slots: ['phone', 'wallpaper', 'ringtone'], name: 'TELEPHONE' }, { slot: 'xp', name: 'PASSE DES NIVEAUX' }, { slot: 'style', name: 'STYLE' }, { slot: 'wardrobe', name: 'MES TENUES' },
 ];
 const ICONS = [
   ['...aaa...', '...aaa...', '...aaa...', '...bbb...', '.aaaaaaa.'],
@@ -22,24 +23,28 @@ const ICONS = [
   ['.a.....a.', '..a...a..', '...a.a...', '....b....', '...bbb...'],
   ['....a....', '...aaa...', 'aaaaaaaaa', '..aa.aa..', '.a.....a.'],
   ['...aaa...', '...aca...', '...aca...', '...aaa...', '...aba...'],
+  ['....b....', '...bbb...', 'bbbbbbbbb', '..bbbbb..', '.bb...bb.'],
   ['..aaaa...', '.abaacaa.', '.aaaaaaa.', '.adaaa...', '..aaa....'],
   ['aaaaaaaaa', 'a...a...a', 'a.b.a.b.a', 'a...a...a', 'aaaaaaaaa'],
 ].map(r => grid(r, { a: '#f0e0ff', b: '#ffc030', c: '#4aa8ff', d: '#ff4ab0' }));
 
-export const shop = { open: false, tab: 3, sel: null, rot: 0, manual: 0, hover: null, confetti: [] };
+export const shop = { open: false, tab: 3, sel: null, rot: 0, manual: 0, hover: null, confetti: [], page: 0 };
 const DIRS = [0, 2, 3, 1];
 
 // ---------- layout ----------
 const tabRect = i => [186 + Math.floor(i * 290 / TABS.length), 6, Math.floor(290 / TABS.length) - 2, 22];
 const cardRect = k => [186 + (k % 5) * 58, 50 + Math.floor(k / 5) * 92, 54, 88];
 const ARROWS = [[24, 214, 16, 14], [150, 214, 16, 14]];
+const PAGER = [[186, 234, 16, 14], [460, 234, 16, 14]]; // level pass tab: 10 cards per page
 const swatchRect = (row, k) => [190 + k * 23, 62 + row * 56, 20, 20];
 const presetRect = k => [192 + k * 94, 50, 88, 178];
 const presetBtn = (k, b) => [196 + k * 94, 192 + b * 17, 80, 14];
 const inR = ([x, y, w, h], mx, my) => mx >= x && mx < x + w && my >= y && my < y + h;
 
 const tab = () => TABS[shop.tab].slot;
-const items = () => (TABS[shop.tab].slots || [tab()]).flatMap(s => BY_SLOT[s] || []);
+const allItems = () => (tab() === 'xp' ? XP_ITEMS : (TABS[shop.tab].slots || [tab()]).flatMap(s => BY_SLOT[s] || []));
+const pages = () => Math.ceil(XP_ITEMS.length / 10);
+const items = () => (tab() === 'xp' ? XP_ITEMS.slice(shop.page * 10, shop.page * 10 + 10) : allItems());
 const owns = (me, it) => it.price === 0 || me.owned.has(it.id);
 export const preview = me => {
   const it = ITEMS[shop.sel];
@@ -48,7 +53,7 @@ export const preview = me => {
 
 // ---------- drawing ----------
 const [pv, pvx] = canvas(44, 44);
-function avatarAt(x, o, color, dir, now, px, py, scale) {
+export function avatarAt(x, o, color, dir, now, px, py, scale) {
   pvx.clearRect(0, 0, 44, 44);
   drawAvatar(pvx, 22, 36, o, color, dir, 0, now);
   x.drawImage(pv, Math.round(px - 22 * scale), Math.round(py - 36 * scale), 44 * scale, 44 * scale);
@@ -75,10 +80,10 @@ function card(x, me, it, k, now) {
   g.addColorStop(0, hov ? '#3a2450' : '#24142e'); g.addColorStop(1, '#0e0814');
   x.fillStyle = g; x.fillRect(cx, cy - (hov ? 1 : 0), cw, chh);
   const y0 = cy - (hov ? 1 : 0);
-  if (it.rarity === 3) { // legendary shimmer
+  if (it.rarity >= 3) { // legendary shimmer, rainbow for the level pass mythics
     x.save(); x.beginPath(); x.rect(cx, y0, cw, chh); x.clip();
     const s = (now / 6 + k * 40) % 260 - 80;
-    x.fillStyle = 'rgba(255,220,120,.18)';
+    x.fillStyle = it.rarity === 4 ? `hsla(${(now / 8 + k * 40) % 360},100%,65%,.22)` : 'rgba(255,220,120,.18)';
     for (let i = 0; i < 12; i++) x.fillRect(cx + s + i, y0 + i * 8, 10, 8);
     x.restore();
   } else if (it.rarity === 2) { x.fillStyle = `rgba(176,96,255,${0.06 + 0.05 * Math.sin(now / 250 + k)})`; x.fillRect(cx, y0, cw, chh); }
@@ -93,7 +98,7 @@ function card(x, me, it, k, now) {
   const words = it.name.split(' '), lines = [''];
   for (const wd of words) { if ((lines.at(-1) + ' ' + wd).trim().length > 13) lines.push(wd); else lines[lines.length - 1] = (lines.at(-1) + ' ' + wd).trim(); }
   lines.slice(0, 2).forEach((l, i) => text(x, l, cx + cw / 2, y0 + 63 + i * 7, '#fff', 1, 'center'));
-  const st = worn ? ['PORTE', '#60ff80'] : owns(me, it) ? [it.price ? 'POSSEDE' : 'GRATUIT', '#c8c0d8'] : it.price < 0 ? ['A TROUVER', '#8a7a9a'] : null;
+  const st = worn ? ['PORTE', '#60ff80'] : owns(me, it) ? [it.price ? 'POSSEDE' : 'GRATUIT', '#c8c0d8'] : it.price < 0 ? (LEVEL_OF[it.id] ? ['NIVEAU ' + LEVEL_OF[it.id], '#80f0ff'] : ['A TROUVER', '#8a7a9a']) : null;
   if (st) text(x, st[0], cx + cw / 2, y0 + 79, st[1], 1, 'center');
   else {
     const p = it.price >= 10000 ? Math.round(it.price / 1000) + 'K' : it.price + '';
@@ -155,7 +160,12 @@ export function drawShop(x, w, h, now, me) {
   const t = TABS[shop.tab];
   const list = items();
   text(x, t.name, 186, 36, '#ffe680', 1, 'left', '#000');
-  if (list.length) text(x, list.filter(it => owns(me, it)).length + '/' + list.length, 472, 36, '#a090b0', 1, 'right');
+  const all = allItems();
+  if (all.length) text(x, all.filter(it => owns(me, it)).length + '/' + all.length, 472, 36, '#a090b0', 1, 'right');
+  if (t.slot === 'xp') {
+    PAGER.forEach(([px, py, pw, ph], i) => { x.fillStyle = '#3a2448'; x.fillRect(px, py, pw, ph); text(x, i ? '>' : '<', px + pw / 2, py + 4, '#fff', 1, 'center'); });
+    text(x, `PAGE ${shop.page + 1}/${pages()}  -  TOUCHE N : LE PASSE`, 331, 238, '#a090b0', 1, 'center');
+  }
   if (t.slot === 'style') styleTab(x, me, now);
   else if (t.slot === 'wardrobe') wardrobeTab(x, me, now);
   else list.forEach((it, k) => card(x, me, it, k, now));
@@ -209,7 +219,8 @@ export function shopHover(mx, my) {
 
 // Returns an action for the server, or null.
 export function shopClick(mx, my, me, now) {
-  for (let i = 0; i < TABS.length; i++) if (inR(tabRect(i), mx, my)) { shop.tab = i; shop.sel = null; return null; }
+  for (let i = 0; i < TABS.length; i++) if (inR(tabRect(i), mx, my)) { shop.tab = i; shop.sel = null; shop.page = 0; return null; }
+  if (tab() === 'xp') for (let i = 0; i < 2; i++) if (inR(PAGER[i], mx, my)) { shop.page = (shop.page + (i ? 1 : pages() - 1)) % pages(); return null; }
   for (let i = 0; i < 2; i++) if (inR(ARROWS[i], mx, my)) {
     const cur = shop.manual > now ? shop.rot : Math.floor(now / 1600) % 4;
     shop.rot = (cur + (i ? 1 : 3)) % 4; shop.manual = now + 6000; return null;
@@ -245,7 +256,8 @@ export function shopBar(me) {
   if (it) {
     const worn = me.outfit[it.slot] === it.id;
     sig += worn + owns(me, it);
-    if (!owns(me, it) && it.price < 0) html = '<span class="info">Introuvable en boutique : fouille les poubelles dehors !</span>';
+    if (!owns(me, it) && LEVEL_OF[it.id]) html = `<span class="info">Récompense du niveau ${LEVEL_OF[it.id]} : ouvre le passe des niveaux avec N</span>`;
+    else if (!owns(me, it) && it.price < 0) html = '<span class="info">Introuvable en boutique : fouille les poubelles dehors !</span>';
     else if (!owns(me, it)) {
       const ok = me.chips >= it.price;
       html = `<button class="go big" data-shop='{"a":"buy","id":"${it.id}"}' ${ok ? '' : 'disabled'}>Acheter — ${it.price.toLocaleString('fr-FR')} jetons</button>` +

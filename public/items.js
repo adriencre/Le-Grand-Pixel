@@ -1,11 +1,12 @@
 // Cosmetic catalog, shared by the server (prices, ownership) and the browser (drawing).
-// Purely visual: no item changes any game odds.
+// Visual, except on the street at night where rarer clothes attract better clients (games/night.js charm).
 
 export const RARITY = [
   { name: 'COMMUN', color: '#a8a8b8' },
   { name: 'RARE', color: '#4aa8ff' },
   { name: 'EPIQUE', color: '#b060ff' },
   { name: 'LEGENDAIRE', color: '#ffc030' },
+  { name: 'MYTHIQUE', color: '#ff4080' }, // level pass only
 ];
 
 export const SKINS = ['#f8dcc0', '#f4cda4', '#dca274', '#c08050', '#a86a40', '#6a4028'];
@@ -85,6 +86,31 @@ const RAW = [
   // price -1: not for sale, only found in the street trash cans
   ['acc_sacpoubelle', 'acc', 'Cape sac-poubelle', -1, 2, 'cape', { a: '#1c1c22', c: '#34343c' }, 'Le chic de la rue.'],
   ['acc_guitare', 'acc', 'Guitare de rue', -1, 2, 'guitar', { a: '#b06a2a', c: '#1a1008', x: '#3a2010' }, 'Elle en a vu, des trottoirs.'],
+  // level pass (public/levels.js TRACK): price -1, never sold, never in the trash
+  ['xp_cap', 'hat', 'Casquette neon', -1, 1, 'cap', { a: '#ff40c0', c: '#20f0ff' }, 'Niveau 5 : le debut de l\'aventure.'],
+  ['xp_lunettes', 'glasses', 'Lunettes dorees', -1, 1, 'shades', { a: '#e8b830' }, 'Niveau 10 : on te remarque.'],
+  ['xp_sweat', 'top', 'Sweat Grand Pixel', -1, 1, 'hoodie', { a: '#5a1a8a', c: '#e8b830' }, 'Niveau 15 : aux couleurs du casino.'],
+  ['xp_baskets', 'shoes', 'Baskets magenta', -1, 1, 'neon', { a: '#ff40c0' }, 'Niveau 20 : elles s\'illuminent en rose.'],
+  ['xp_bonnet', 'hat', 'Bonnet dore', -1, 1, 'beanie', { a: '#e8b830', c: '#fff4c0' }, 'Niveau 25 : chaud et brillant.'],
+  ['xp_echarpe', 'acc', 'Echarpe royale', -1, 1, 'scarf', { a: '#7a2aaa' }, 'Niveau 30 : un habitue.'],
+  ['xp_noeud', 'acc', 'Noeud papillon dore', -1, 2, 'bowtie', { a: '#e8b830' }, 'Niveau 40 : la classe du croupier.'],
+  ['xp_smoking', 'top', 'Smoking blanc', -1, 2, 'tux', { a: '#f4f4f8', c: '#141418', x: '#e8b830' }, 'Niveau 50 : rang Argent.'],
+  ['xp_borsalino', 'hat', 'Borsalino d\'or', -1, 2, 'fedora', { a: '#e8b830', c: '#141418' }, 'Niveau 60 : le parrain du casino.'],
+  ['xp_santiags', 'shoes', 'Santiags dorees', -1, 2, 'shoe', { a: '#e8b830' }, 'Niveau 75 : chaque pas sonne.'],
+  ['xp_couronne', 'hat', 'Couronne de platine', -1, 3, 'crown', { a: '#d8e0f0', c: '#60a8ff', x: '#c070ff' }, 'Niveau 100 : rang Or.'],
+  ['xp_armure', 'top', 'Armure doree', -1, 3, 'armor', { a: '#e8b830', c: '#141418' }, 'Niveau 125 : invincible.'],
+  ['xp_visiere', 'glasses', 'Visiere doree', -1, 3, 'visor', { a: '#ffc030' }, 'Niveau 150 : tu vois l\'avenir.'],
+  ['xp_cape', 'acc', 'Cape noir et or', -1, 3, 'cape', { a: '#141418', c: '#e8b830' }, 'Niveau 200 : rang Platine.'],
+  ['xp_ailes', 'acc', 'Ailes dorees', -1, 4, 'wings', { a: '#ffe060', c: '#e8a020' }, 'Niveau 250 : tu t\'envoles.'],
+  ['xp_aura', 'fx', 'Aura doree', -1, 4, 'goldaura', null, 'Niveau 300 : tu rayonnes.'],
+  ['xp_costume', 'top', 'Costume diamant', -1, 4, 'suit', { a: '#60c8ff', c: '#f4fbff', x: '#c070ff' }, 'Niveau 400 : rang Diamant bientot.'],
+  ['xp_eclairs', 'fx', 'Eclairs', -1, 4, 'lightning', null, 'Niveau 500 : rang Maitre.'],
+  ['xp_ailes_cosmos', 'acc', 'Ailes cosmiques', -1, 4, 'wings', { a: '#2a1050', c: '#c070ff' }, 'Niveau 600 : venues d\'ailleurs.'],
+  ['xp_galaxie', 'fx', 'Galaxie', -1, 4, 'galaxy', null, 'Niveau 700 : des planetes autour de toi.'],
+  ['xp_jetons', 'fx', 'Pluie de jetons', -1, 4, 'chips', null, 'Niveau 800 : il pleut des jetons.'],
+  ['xp_aureole', 'hat', 'Aureole sombre', -1, 4, 'halo', { a: '#a040ff' }, 'Niveau 900 : ange ou demon ?'],
+  ['xp_tenue', 'top', 'Tenue de Legende', -1, 4, 'suit', { a: '#ffe060', c: '#ff40c0', x: '#20f0ff' }, 'Niveau 950 : presque au sommet.'],
+  ['xp_legende', 'fx', 'Aura de Legende', -1, 4, 'legend', null, 'Niveau 1000 : la legende du Grand Pixel.'],
   // telephone: model, wallpaper, ringtone
   ['ph_basic', 'phone', 'Telephone basique', 0, 0, 'basic', { a: '#2a2a34' }, 'Il fait le job.'],
   ['ph_nokia', 'phone', 'Vieux Nokia', 300, 0, 'nokia', { a: '#5a6a7a' }, 'Increvable. Ecran vert.'],
@@ -110,7 +136,9 @@ const RAW = [
 export const ITEMS = Object.fromEntries(RAW.map(([id, slot, name, price, rarity, style, colors, desc]) => [id, { id, slot, name, price, rarity, style, colors, desc }]));
 export const SLOTS = ['hat', 'hair', 'glasses', 'top', 'bottom', 'shoes', 'acc', 'fx', 'phone', 'wallpaper', 'ringtone'];
 export const REMOVABLE = ['hat', 'glasses', 'acc', 'fx', 'wallpaper', 'ringtone']; // the others always need something
-export const BY_SLOT = Object.fromEntries(SLOTS.map(s => [s, RAW.filter(r => r[1] === s).map(r => ITEMS[r[0]])]));
+const isXp = r => r[0].startsWith('xp_'); // level pass items have their own shop tab
+export const BY_SLOT = Object.fromEntries(SLOTS.map(s => [s, RAW.filter(r => r[1] === s && !isXp(r)).map(r => ITEMS[r[0]])]));
+export const XP_ITEMS = RAW.filter(isXp).map(r => ITEMS[r[0]]);
 
 function hash(s) { let h = 7; for (const ch of String(s)) h = (h * 31 + ch.charCodeAt(0)) >>> 0; return h; }
 

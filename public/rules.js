@@ -286,6 +286,37 @@ const GUIDES = {
       'Au casino ou dans la rue : le videur dehors embauche aussi. Echap pour arreter.'] },
   ] },
 
+  trottoir: { name: 'LA NUIT (18+)', pages: [
+    { title: 'RACOLER : LUMIERE OU OMBRE ?', art: (x, cx, t) => {
+      x.fillStyle = 'rgba(255,220,120,.25)'; x.beginPath(); x.arc(cx - 60, t + 26, 22, 0, 7); x.fill();
+      text(x, 'LUMIERE', cx - 60, t + 4, '#ffe680', 1, 'center'); text(x, '<3 X2', cx - 60, t + 24, '#ff4ab0', 1, 'center');
+      text(x, 'OMBRE', cx + 60, t + 4, '#8a7a9a', 1, 'center'); text(x, 'DISCRET', cx + 60, t + 24, '#c8b8d8', 1, 'center');
+    }, lines: ['La nuit, au reverbere au bout de la rue : E pour prendre ton service, puis promene-toi.',
+      'Les passants qui marchent pres de toi s\'interessent : une jauge <3 se remplit.',
+      'Elle monte plus vite avec une tenue rare, ta reputation... et sous un reverbere (x2).',
+      'Jauge pleine : il s\'arrete avec un ? et t\'attend 12 secondes. Va l\'aborder avec E.'] },
+    { title: 'NEGOCIER', art: (x, cx, t) => {
+      buttons(x, [['1 CHARMER', '#5a2a48'], ['2 PROPOSER', '#5a4a20'], ['3 ACCEPTER', '#206a30'], ['4 PARTIR', '#6a2030']], cx, t + 6);
+      text(x, '<  150  >', cx, t + 30, '#fff', 2, 'center', '#000');
+    }, lines: ['Chaque client a un budget cache (fourchette affichee), une HUMEUR et de la PATIENCE.',
+      'Charmer fait monter l\'humeur, mais trop en faire l\'agace. Fleches : regler ton prix.',
+      'Prix trop haut : l\'humeur baisse et il fait une contre-offre (3 pour l\'accepter).',
+      'Bonne humeur = il accepte plus cher. Patience a zero : il s\'en va.'] },
+    { title: 'L\'HOTEL', art: (x, cx, t) => {
+      x.fillStyle = '#ff6ab8'; x.fillRect(cx - 12, t + 4, 24, 16); x.fillStyle = '#5a1030'; x.fillRect(cx - 7, t + 8, 4, 12); x.fillRect(cx + 3, t + 8, 4, 12);
+      text(x, '<3', cx + 18, t, '#ff4ab0'); arrow(x, 0, cx - 60, t + 30); arrow(x, 1, cx - 30, t + 30); arrow(x, 2, cx + 30, t + 30); arrow(x, 3, cx + 60, t + 30);
+    }, lines: ['Marche conclu : il te suit. Emmene-le a l\'HOTEL, dans la ruelle pres du casino (E).',
+      'A l\'interieur, joue en rythme avec les fleches comme a la guitare : 20 secondes.',
+      'La SATISFACTION donne le pourboire (jusqu\'a +50%) et la reputation (+4 si 70% ou plus).',
+      'Un client tres satisfait devient un HABITUE : il revient, de bonne humeur, et paie plus.'] },
+    { title: 'POLICE, REPUTATION, LE MARQUIS', art: (x, cx, t) => {
+      text(x, 'POLICE !', cx - 70, t + 10, '#ff4040', 2, 'center', '#000'); text(x, 'LE MARQUIS -25%', cx + 70, t + 14, '#ff8ad8', 1, 'center');
+    }, lines: ['Un flic patrouille. S\'il te voit negocier ou emmener un client, file !',
+      'Tu as 3 s pour sortir de son champ. Il voit loin dans la lumiere, pres dans l\'ombre.',
+      'Pris : amende (50 + 10% de ta nuit) et reputation -5. Elle attire les clients riches.',
+      'Apres 300 jetons, le Marquis propose sa protection : 25%, mais il te previent des flics.'] },
+  ] },
+
   stocks: { name: 'LA BOURSE', pages: [
     { title: 'ACHETER ET VENDRE', art: (x, cx, t) => {
       const pts = [30, 26, 28, 20, 22, 14, 18, 10, 12, 6];

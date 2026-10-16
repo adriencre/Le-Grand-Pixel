@@ -1,5 +1,5 @@
 import { randomInt } from 'node:crypto';
-import { validBet } from './cards.js';
+import { validBet, stakes } from './cards.js';
 import { HORSES } from '../public/map.js';
 
 export const RUN_TIME = 12000;
@@ -78,6 +78,7 @@ export class Race {
       for (const s of this.seats) if (s) {
         const back = Math.floor(s.bets[win] * this.odds[win]);
         s.p.chips += back;
+        stakes.on?.(s.p, s.bets.reduce((a, b) => a + b, 0));
         s.gain = back - s.bets.reduce((a, b) => a + b, 0);
       }
     }

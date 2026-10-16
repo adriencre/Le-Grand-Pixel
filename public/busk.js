@@ -56,12 +56,12 @@ export function hitBusk(lane, now, emit) {
 }
 
 // Panel on the right of the street view.
-export function drawBusk(x, w, h, now, hype) {
+export function drawBusk(x, w, h, now, hype, title = 'AMBIANCE', foot = 'GAINS +' + busk.earned) {
   if (!busk.on) return;
   const pw = 92, px = w - pw - 6, py = 30, ph = h - 70, hitY = py + ph - 20;
   x.fillStyle = 'rgba(10,4,16,.85)'; x.fillRect(px, py, pw, ph);
   x.fillStyle = '#c8a040'; x.fillRect(px, py, pw, 1); x.fillRect(px, py + ph - 1, pw, 1);
-  text(x, 'AMBIANCE', px + pw / 2, py + 4, '#ffe680', 1, 'center');
+  text(x, title, px + pw / 2, py + 4, '#ffe680', 1, 'center');
   x.fillStyle = '#000'; x.fillRect(px + 6, py + 12, pw - 12, 5);
   for (let k = 0; k < Math.round((pw - 14) * hype); k++) { x.fillStyle = `hsl(${k * 4},90%,60%)`; x.fillRect(px + 7 + k, py + 13, 1, 3); }
   const lx = i => px + 10 + i * 19;
@@ -87,6 +87,6 @@ export function drawBusk(x, w, h, now, hype) {
     text(x, busk.judge, px + pw / 2, hitY - 28, c, 1, 'center', '#000');
   }
   if (busk.combo > 2) text(x, 'COMBO ' + busk.combo, px + pw / 2, hitY - 40, '#ffe680', 1, 'center', '#000');
-  text(x, 'GAINS +' + busk.earned, px + pw / 2, py + ph + 4, '#ffe680', 1, 'center', '#000');
+  text(x, foot, px + pw / 2, py + ph + 4, '#ffe680', 1, 'center', '#000');
   text(x, 'FLECHES / ZQSD', px + pw / 2, py + ph - 8, '#8a7a9a', 1, 'center');
 }

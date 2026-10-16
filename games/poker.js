@@ -1,4 +1,4 @@
-import { deck } from './cards.js';
+import { deck, stakes } from './cards.js';
 
 const RV = { T: 10, J: 11, Q: 12, K: 13, A: 14 };
 const val = c => RV[c[0]] || +c[0];
@@ -223,6 +223,7 @@ export class Poker {
       if (!s) return;
       s.won = win[i];
       s.p.chips += win[i];
+      if (s.inHand) stakes.on?.(s.p, s.total, true);
       s.hand = showdown && s.inHand && !s.folded ? HAND_NAMES[ps[i].score[0]] : '';
     });
     this.notify();
